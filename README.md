@@ -10,7 +10,7 @@
 npx -y --prefer-online global-app-skill@latest skill install
 ```
 
-默认只安装 `~/.agents/skills/overseas-app-research/SKILL.md`。也可用 `--dir /absolute/skills/overseas-app-research` 指定当前客户端实际使用的 skill 目录。已存在的 SKILL.md 会被原子替换，目录中的其他文件保留，符号链接入口拒绝覆盖。安装不下载 references，也不修改 MCP 或客户端配置。安装后让客户端重新加载 skills。
+默认只安装 `~/.agents/skills/overseas-app-research/SKILL.md`。也可用 `--dir /absolute/skills/overseas-app-research` 指定当前客户端实际使用的 skill 目录。安装器把该目录写入入口的 `--skill-dir` 参数，并在同一文件中记录 CLI 版本。已存在的 SKILL.md 会被原子替换，目录中的其他文件保留，符号链接入口拒绝覆盖。安装不下载 references，也不修改 MCP 或客户端配置。
 
 ## 执行
 
@@ -19,6 +19,12 @@ npx -y --prefer-online global-app-skill@latest context resolve --mode research
 ```
 
 `--mode` 为 `download`、`research` 或 `ued`。CLI 每次查询 GitHub 的 `releases/latest.json`，验证清单、压缩包及逐文件 SHA-256，返回绝对 `resourceRoot` 和有序 `mustRead`。agent 读取这些文件后按原工作流编排任务。
+
+`context resolve` 和 `run` 执行前会将已安装的薄入口同步为当前 CLI 捆绑的版本。入口使用 `npx --prefer-online ...@latest`，因此发布新版 CLI 后，下一次执行会更新本地 SKILL.md。传入 `--skill-dir /absolute/skill-directory` 可精确定位安装目录；安装器已自动写入该参数。未传入时仅检查 `~/.agents/skills/overseas-app-research` 和 `${CODEX_HOME:-~/.codex}/skills/overseas-app-research` 中现有的 CLI 入口，不创建新 skill，不覆盖手工维护的其他实现或符号链接，也不降级更新的入口。
+
+自定义目录中的入口若未包含 `--skill-dir`，重新执行一次 `skill install --dir ...` 写入准确目录。`context resolve` 的 `skillUpdate` 单独报告入口同步结果；同步失败会明确显示，资源解析仍可独立进行。脚本 stdout 和退出码保持不变，同步日志写入 stderr。
+
+本地文件更新后，新入口在客户端重新加载 skill 时采用；已经读入当前任务的上下文不因磁盘替换自动改写。[Codex 官方文档](https://learn.chatgpt.com/docs/build-skills)说明会自动检测 skill 变更；如果没有显示更新，可重启 Codex。其他客户端遵循各自的重新加载规则。
 
 ```sh
 npx -y --prefer-online global-app-skill@latest run preflight --mode research --resource-root /absolute/resolved/hash -- --report /absolute/task/environment.json
