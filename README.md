@@ -93,8 +93,8 @@ git push origin resources-v0.1.4
 
 该 tag 只发布 GitHub Release，跳过 npm。客户端下次 resolve 自动获取新资源。资源工作流仍包含完整快照，删除的源文件不会残留到新快照。已有任务继续使用其固定快照。不要删除历史 Release 的资源资产。
 
-### 一次性配置 npm Trusted Publisher
+### 一次性配置 npm 发布认证
 
-在 npm 的 `global-app-skill` 包 Settings 中配置 GitHub Actions Trusted Publisher：组织 `shiguang-lab`、仓库 `global-app-skill`、工作流文件 `publish.yml`、允许 `npm publish`，不设置 environment。工作流使用 `id-token: write` 和 npm OIDC，不保存本机 token。GitHub Release 使用 Actions 自带的 `GITHUB_TOKEN` 与 `contents: write`。
+在 GitHub 仓库 Actions secrets 中配置拥有 `global-app-skill` 发布权限的 `NPM_TOKEN`，工作流将其绑定到 npm 使用的 `NODE_AUTH_TOKEN`，不读取或复制本机 token。也可在 npm 包 Settings 中配置 GitHub Actions Trusted Publisher：组织 `shiguang-lab`、仓库 `global-app-skill`、工作流文件 `publish.yml`、允许 `npm publish`，不设置 environment。工作流保留 `id-token: write`，供 OIDC 与 provenance 使用。GitHub Release 使用 Actions 自带的 `GITHUB_TOKEN` 与 `contents: write`。
 
 以后只推 tag，由 Actions 发布，不在本机执行 `npm publish`。当前项目未授予开源许可证，npm 元数据使用 `UNLICENSED`。
