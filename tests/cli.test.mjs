@@ -6,9 +6,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { test } from 'node:test';
 import { buildResources } from '../scripts/build-resources.mjs';
-import { identity, SCRIPTS, validateManifest } from '../src/protocol.mjs';
+import { identity, sha256, SCRIPTS, validateManifest } from '../src/protocol.mjs';
 import { readSnapshot, resolveContext } from '../src/resources.mjs';
 import { installSkill } from '../src/skill.mjs';
 
@@ -144,9 +145,12 @@ test('rejects unsafe manifests, incompatible CLI requirements and symlinked cach
 
 test('parallel first-time resolutions return the same verified snapshot', async t => {
   const f = await fixture(t);
-  const results = await Promise.all(Array.from({ length: 4 }, () => resolveContext(f.options)));
-  assert.equal(new Set(results.map(result => result.resourceRoot)).size, 1);
-  await readSnapshot(results[0].resourceRoot);
+  for (let round = 0; round < 5; round++) {
+    const options = { ...f.options, cacheDir: path.join(f.directory, `parallel-cache-${round}`) };
+    const results = await Promise.all(Array.from({ length: 4 }, () => resolveContext(options)));
+    assert.equal(new Set(results.map(result => result.resourceRoot)).size, 1);
+    await readSnapshot(results[0].resourceRoot);
+  }
 });
 
 test('all existing script CLIs can be invoked through verified resources', async t => {
@@ -158,4 +162,22 @@ test('all existing script CLIs can be invoked through verified resources', async
     const { stdout } = await exec(process.execPath, [cli, 'run', script, '--resource-root', resourceRoot, '--', '--help']);
     assert.match(stdout, /usage:/);
   }
+});
+
+test('release checks accept equivalent gzip encodings and reject changed source or corrupt archives', async t => {
+  const f = await fixture(t);
+  const bundlePath = path.join(f.output, f.manifest.bundle);
+  const alternate = gzipSync(gunzipSync(await readFile(bundlePath)), { level: 1 });
+  assert.notEqual(sha256(alternate), f.manifest.sha256);
+  await writeFile(bundlePath, alternate);
+  const published = { ...f.manifest, sha256: sha256(alternate), size: alternate.length };
+  await writeFile(path.join(f.output, 'latest.json'), JSON.stringify(published));
+  assert.equal((await buildResources(f.source, f.output, { check: true })).sha256, published.sha256);
+  const guide = path.join(f.source, 'references/guide.md');
+  const original = await readFile(guide);
+  await writeFile(guide, 'changed source');
+  await assert.rejects(buildResources(f.source, f.output, { check: true }), /differ from source/);
+  await writeFile(guide, original);
+  await writeFile(bundlePath, 'corrupt archive');
+  await assert.rejects(buildResources(f.source, f.output, { check: true }), /differ from source/);
 });

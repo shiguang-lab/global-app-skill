@@ -1,7 +1,7 @@
 import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { gzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { identity, sha256, validateManifest } from '../src/protocol.mjs';
 
 export async function buildResources(source, output, { check = false } = {}) {
@@ -20,15 +20,22 @@ export async function buildResources(source, output, { check = false } = {}) {
   entries.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
   const files = entries.map(file => ({ path: file.path, sha256: sha256(file.bytes), size: file.bytes.length }));
   const resourceHash = identity(files);
-  const bundle = gzipSync(JSON.stringify({ files: entries.map(file => ({ path: file.path, content: file.bytes.toString('base64') })) }), { level: 9 });
+  const payload = Buffer.from(JSON.stringify({ files: entries.map(file => ({ path: file.path, content: file.bytes.toString('base64') })) }));
+  const bundle = gzipSync(payload, { level: 9 });
   const manifest = validateManifest({ schemaVersion: 1, minCliVersion: '0.1.0', resourceHash,
     bundle: `${resourceHash}.json.gz`, sha256: sha256(bundle), size: bundle.length, files });
   const manifestText = JSON.stringify(manifest, null, 2) + '\n';
   if (check) {
-    if (await readFile(path.join(output, 'latest.json'), 'utf8') !== manifestText ||
-        !bundle.equals(await readFile(path.join(output, manifest.bundle)))) {
+    const published = validateManifest(JSON.parse(await readFile(path.join(output, 'latest.json'), 'utf8')));
+    const bytes = await readFile(path.join(output, published.bundle));
+    // zlib versions may encode identical source bytes differently. Verify the
+    // published archive itself, then compare its full decoded payload to source.
+    if (published.resourceHash !== resourceHash || published.minCliVersion !== manifest.minCliVersion ||
+        bytes.length !== published.size || sha256(bytes) !== published.sha256 ||
+        !gunzipSync(bytes).equals(payload)) {
       throw new Error('Published resources differ from source; run npm run resources:build');
     }
+    return published;
   } else {
     await mkdir(output, { recursive: true });
     await writeFile(path.join(output, manifest.bundle), bundle);

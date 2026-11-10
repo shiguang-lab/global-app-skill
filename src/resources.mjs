@@ -1,6 +1,7 @@
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { gunzipSync } from 'node:zlib';
 import { FEED, MAX_BYTES, MODES, sha256, validateManifest, validateMode } from './protocol.mjs';
 
@@ -81,10 +82,25 @@ export async function resolveContext({ mode, feed = FEED, cacheDir, progress = (
         await writeFile(target, file.content, { flag: 'wx' });
       }
       await writeFile(path.join(staging, 'manifest.json'), JSON.stringify(manifest));
-      if (!(await validSnapshot(resourceRoot, manifest.resourceHash))) await rm(resourceRoot, { recursive: true, force: true });
-      try { await rename(staging, resourceRoot); }
-      catch (error) {
-        if (!['EEXIST', 'ENOTEMPTY'].includes(error.code) || !(await validSnapshot(resourceRoot, manifest.resourceHash))) throw error;
+      const lock = path.join(releases, `.${manifest.resourceHash}.lock`);
+      const deadline = Date.now() + 5000;
+      for (;;) {
+        try { await mkdir(lock); break; }
+        catch (error) {
+          if (error.code !== 'EEXIST') throw error;
+          if (Date.now() >= deadline) throw new Error(`Snapshot publication is locked: ${lock}; retry after the other updater finishes. Remove a stale lock only when no updater is running.`);
+          await delay(50);
+        }
+      }
+      try {
+        // Recheck under the lock so a concurrent resolver's completed snapshot
+        // cannot be deleted after an earlier ENOENT integrity check.
+        if (!(await validSnapshot(resourceRoot, manifest.resourceHash))) {
+          await rm(resourceRoot, { recursive: true, force: true });
+          await rename(staging, resourceRoot);
+        }
+      } finally {
+        await rm(lock, { recursive: true, force: true });
       }
       updated = true;
     } finally { await rm(staging, { recursive: true, force: true }); }
