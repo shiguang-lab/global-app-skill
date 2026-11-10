@@ -35,7 +35,7 @@
 
 第 5–9 步允许按所选分支的回路往返补证；不是要求静态反编译全部成功后才能看原包。进入第 5 步读 [包体与代码恢复](package-analysis.md)，第 6/7 步读 [运行与 Mock](runtime-and-mock.md)。第 8–10 步，业务分支读 [业务、UI 与报告](business-ui-report.md)，UED 分支读 [UED 界面提取工作流](ued-workflow.md)。
 
-业务分支开始组织报告时，先读 [业务结果报告格式示例](../examples/business-results-report/README.md)，并参考 [可视示例](../examples/business-results-report/report.html)。默认按“业务总览 → 按 App 分组 → 完整主流程 → 各阶段的条件、操作与分支 → 原始 UI、字段和权限”组织；借鉴结构，不照搬业务结论。UED 图册遵循其分支交付结构。
+业务分支第 8 步组织大纲前必读 [报告结构与验收](../examples/business-results-report/README.md)，并打开 [双 App 可视示例](../examples/business-results-report/report.html)。默认按“业务总览 → 每款 App 独立章节 → 本 App 主流程 → 各阶段的条件、操作与分支 → 本阶段原始 UI、字段和权限”组织；补查结果合并到所属 App/阶段，第 10 步提取实际章节树并验收，不能只参考视觉样式。示例业务结论不照搬。UED 图册遵循其分支交付结构。
 
 ## 执行记录与复核门槛
 

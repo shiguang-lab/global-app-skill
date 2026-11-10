@@ -29,7 +29,7 @@
 
 第 5 步读 [包体与代码恢复](package-analysis.md) 和 [共用页面提取模块](ui-extraction.md)；第 6/7 步读 [运行和 Mock](runtime-and-mock.md)；第 8–10 步调用共用模块提取图片，按 [业务、UI 与报告](business-ui-report.md) 形成业务交付。
 
-第 10 步的对外报告按 [业务结果报告格式示例](../examples/business-results-report/README.md) 组织，示例源为用户指定的 `analysis/借款流程分析.html`。保留按 App、业务阶段、流程图和原始 UI 的阅读方式；上表中的代码、索引、fixture 和复核材料属于内部产物，不自动成为报告章节或附件。
+第 8 步生成大纲前必读 [报告结构与验收](../examples/business-results-report/README.md)，打开其双 App 可视示例；第 10 步按实际标题/DOM 树验收“总览 → 每款 App 独立章节 → 阶段/分支 → 对应原始 UI”。后续 Mock/补查结果回填所属 App/阶段，不追加同级研究日志。示例源为用户指定的 `analysis/借款流程分析.html`；上表中的代码、索引、fixture 和复核材料属于内部产物，不自动成为报告章节或附件。
 
 ## 回路与失败处理
 
