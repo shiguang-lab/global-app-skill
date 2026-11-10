@@ -13,6 +13,7 @@ const usage = `global-app-skill ${VERSION}
 
 skill install writes only SKILL.md; default: ~/.agents/skills/overseas-app-research.
 context resolve and run synchronize existing managed skill entries from this CLI bundle.
+Skill locations are discovered from client user/project directories and CLI installation records.
 run uses a verified pinned snapshot when --resource-root is supplied; otherwise it resolves current resources.
 Script stdout/stderr and exit code are preserved. JSON command results go to stdout; progress goes to stderr.
 `;
@@ -42,6 +43,7 @@ export async function main(argv) {
     throw new Error('--resource-root cannot be combined with --feed or --cache-dir');
   }
   const skillUpdate = command === 'skill' ? undefined : await syncInstalledSkills({ directory: values['skill-dir'] });
+  if (skillUpdate?.error) process.stderr.write(`[global-app-skill] Skill discovery failed: ${skillUpdate.error}\n`);
   for (const entry of skillUpdate?.installations || []) {
     if (entry.status === 'updated') process.stderr.write(`[global-app-skill] Updated local entry: ${entry.skillPath}; reload the skill to use new discovery instructions\n`);
     if (entry.status === 'failed') process.stderr.write(`[global-app-skill] Skill entry update failed: ${entry.skillPath}: ${entry.error}\n`);

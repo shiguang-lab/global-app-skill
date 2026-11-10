@@ -10,7 +10,7 @@
 npx -y --prefer-online global-app-skill@latest skill install
 ```
 
-默认只安装 `~/.agents/skills/overseas-app-research/SKILL.md`。也可用 `--dir /absolute/skills/overseas-app-research` 指定当前客户端实际使用的 skill 目录。安装器把该目录写入入口的 `--skill-dir` 参数，并在同一文件中记录 CLI 版本。已存在的 SKILL.md 会被原子替换，目录中的其他文件保留，符号链接入口拒绝覆盖。安装不下载 references，也不修改 MCP 或客户端配置。
+默认只安装 `~/.agents/skills/overseas-app-research/SKILL.md`。也可用 `--dir /absolute/skills/overseas-app-research` 指定当前客户端实际使用的 skill 目录。所有目录使用完全相同的薄入口，只记录 CLI 版本，不写入安装路径。安装位置记录在本机状态目录，供 CLI 后续自动发现；该记录不放进 skill。已存在的 SKILL.md 会被原子替换，目录中的其他文件保留，符号链接入口拒绝覆盖。安装不下载 references，也不修改 MCP 或客户端配置。
 
 ## 执行
 
@@ -20,9 +20,13 @@ npx -y --prefer-online global-app-skill@latest context resolve --mode research
 
 `--mode` 为 `download`、`research` 或 `ued`。CLI 每次查询 GitHub 最新正式 Release 的 `latest.json` 附件，验证清单、压缩包及逐文件 SHA-256，返回绝对 `resourceRoot` 和有序 `mustRead`。agent 读取这些文件后按原工作流编排任务。
 
-`context resolve` 和 `run` 执行前会将已安装的薄入口同步为当前 CLI 捆绑的版本。入口使用 `npx --prefer-online ...@latest`，因此发布新版 CLI 后，下一次执行会更新本地 SKILL.md。传入 `--skill-dir /absolute/skill-directory` 可精确定位安装目录；安装器已自动写入该参数。未传入时仅检查 `~/.agents/skills/overseas-app-research` 和 `${CODEX_HOME:-~/.codex}/skills/overseas-app-research` 中现有的 CLI 入口，不创建新 skill，不覆盖手工维护的其他实现或符号链接，也不降级更新的入口。
+`context resolve` 和 `run` 执行前由 CLI 自动定位已安装的薄入口，更新为当前 CLI 捆绑的版本。入口只调用通用命令，不传安装路径。入口使用 `npx --prefer-online ...@latest`，因此发布新版 CLI 后，下一次执行会更新本地 SKILL.md。
 
-自定义目录中的入口若未包含 `--skill-dir`，重新执行一次 `skill install --dir ...` 写入准确目录。`context resolve` 的 `skillUpdate` 单独报告入口同步结果；同步失败会明确显示，资源解析仍可独立进行。脚本 stdout 和退出码保持不变，同步日志写入 stderr。
+CLI 检查以下位置中的 `overseas-app-research/SKILL.md`：用户目录下的 `.agents/skills`、`.codex/skills`、`.claude/skills`、`.cursor/skills`、`.gemini/skills`、`.kiro/skills`；当前目录至最近 Git 仓库根目录之间的相同项目级目录；`CODEX_HOME/skills`；以及 CLI 安装时登记的目录。不在 Git 仓库内时，项目级发现只检查当前目录，不遍历其他工作区。
+
+自定义安装目录通过 `skill install --dir ...` 登记在 `${XDG_STATE_HOME:-~/.local/state}/global-app-skill/installations/`，不需要把路径写进 SKILL.md。复制到另一台机器的标准 skill 目录后，CLI 会按该机器环境重新发现；移到标准目录以外的位置时，再运行一次安装命令登记新位置。`--skill-dir` 仅保留为手动指定本次更新目标的可选参数，薄入口无需使用。
+
+自动同步只更新已经存在且属于本 CLI 的入口，不创建其他客户端的 skill，不覆盖手工维护的其他实现或符号链接，也不降级更新的入口。`context resolve` 的 `skillUpdate` 单独报告同步结果；失败会明确显示，资源解析仍可独立进行。脚本 stdout 和退出码保持不变，同步日志写入 stderr。
 
 本地文件更新后，新入口在客户端重新加载 skill 时采用；已经读入当前任务的上下文不因磁盘替换自动改写。[Codex 官方文档](https://learn.chatgpt.com/docs/build-skills)说明会自动检测 skill 变更；如果没有显示更新，可重启 Codex。其他客户端遵循各自的重新加载规则。
 

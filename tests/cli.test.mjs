@@ -11,10 +11,11 @@ import { test } from 'node:test';
 import { buildResources } from '../scripts/build-resources.mjs';
 import { bundleUrl, FEED, identity, sha256, SCRIPTS, validateManifest, VERSION } from '../src/protocol.mjs';
 import { readSnapshot, resolveContext } from '../src/resources.mjs';
-import { installSkill, syncInstalledSkills } from '../src/skill.mjs';
+import { installSkill as install, syncInstalledSkills } from '../src/skill.mjs';
 
 const cli = fileURLToPath(new URL('../src/cli.mjs', import.meta.url));
 const exec = promisify(execFile);
+const installSkill = directory => install(directory, { stateDirectory: path.join(path.dirname(directory), '.installation-state') });
 
 async function fixture(t) {
   const directory = await mkdtemp(path.join(tmpdir(), 'global-app-skill-test-'));
@@ -207,14 +208,10 @@ test('context resolve updates an old custom skill entry even when resources fail
   assert.match(stderr, /Updated local entry/);
   const updated = await readFile(skillPath, 'utf8');
   assert.ok(updated.includes(`global-app-skill-version: ${VERSION}`));
-  assert.ok(updated.includes("--skill-dir '" + target.replaceAll("'", "'\\''") + "'"));
+  assert.ok(!updated.includes(target));
+  assert.ok(!updated.includes('--skill-dir'));
   assert.deepEqual(await readdir(target), ['SKILL.md']);
   assert.equal(JSON.parse((await exec(process.execPath, args)).stdout).skillUpdate.installations[0].status, 'unchanged');
-  const quote = value => "'" + value.replaceAll("'", "'\\''") + "'";
-  const command = updated.split('\n').find(line => line.startsWith('npx ') && line.includes('context resolve'))
-    .replace('npx -y --prefer-online global-app-skill@latest', `${quote(process.execPath)} ${quote(cli)}`)
-    .replace('--mode MODE', '--mode research') + ` --feed ${quote(f.options.feed)} --cache-dir ${quote(f.options.cacheDir)}`;
-  assert.equal(JSON.parse((await exec('/bin/sh', ['-c', command])).stdout).skillUpdate.installations[0].status, 'unchanged');
   await writeFile(skillPath, oldEntry);
   await rm(path.join(f.output, 'latest.json'));
   await assert.rejects(exec(process.execPath, args), error => {

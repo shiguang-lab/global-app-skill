@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { VERSION } from './protocol.mjs';
+import { discoverSkillDirectories, rememberInstallation } from './installations.mjs';
 
 async function stat(filename) {
   try { return await lstat(filename); }
@@ -46,8 +47,7 @@ async function writeSkill(target, existingOnly) {
       }
     }
     const bundled = await readFile(new URL('../skills/overseas-app-research/SKILL.md', import.meta.url), 'utf8');
-    const quotedDirectory = "'" + target.replaceAll("'", "'\\''") + "'";
-    const content = bundled.replaceAll('SKILL_DIRECTORY', quotedDirectory).trimEnd() + `\n\n<!-- global-app-skill-version: ${VERSION} -->\n`;
+    const content = bundled.trimEnd() + `\n\n<!-- global-app-skill-version: ${VERSION} -->\n`;
     if (previous === content) return { skillPath, status: 'unchanged' };
     const temporary = path.join(target, `.SKILL-${randomUUID()}.tmp`);
     try {
@@ -58,15 +58,18 @@ async function writeSkill(target, existingOnly) {
   } finally { await rm(lock, { recursive: true, force: true }); }
 }
 
-export async function installSkill(directory) {
-  return { ok: true, ...await writeSkill(path.resolve(directory || path.join(homedir(), '.agents/skills/overseas-app-research')), false) };
+export async function installSkill(directory, options = {}) {
+  const target = path.resolve(directory || path.join(options.home || homedir(), '.agents/skills/overseas-app-research'));
+  const result = await writeSkill(target, false);
+  await rememberInstallation(target, options);
+  return { ok: true, ...result };
 }
 
-export async function syncInstalledSkills({ directory, directories = [
-  path.join(homedir(), '.agents/skills/overseas-app-research'),
-  path.join(process.env.CODEX_HOME || path.join(homedir(), '.codex'), 'skills/overseas-app-research'),
-] } = {}) {
-  const targets = [...new Set((directory ? [directory] : directories).map(target => path.resolve(target)))];
+export async function syncInstalledSkills({ directory, directories, ...options } = {}) {
+  let targets;
+  try {
+    targets = [...new Set((directory ? [directory] : directories || await discoverSkillDirectories(options)).map(target => path.resolve(target)))];
+  } catch (error) { return { ok: false, installations: [], error: error.message }; }
   const installations = [];
   for (const target of targets) {
     try { installations.push(await writeSkill(target, true)); }
