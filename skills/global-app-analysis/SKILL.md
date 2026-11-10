@@ -1,9 +1,9 @@
 ---
-name: overseas-app-research
+name: global-app-analysis
 description: 调研海外 Android App 的业务流程、功能入口、字段权限，或为 UED 提取整款 App/指定范围的原始界面图册；也支持仅下载/导出 APK。
 ---
 
-# 海外 App 调研
+# 海外 App 分析
 
 需要 Node.js >=22.12、`python3` >=3.9；设备/AVD 门槛由解析后的工作流检查。
 

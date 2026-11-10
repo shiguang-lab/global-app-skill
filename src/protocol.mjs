@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 export const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version;
+export const SKILL_NAME = 'global-app-analysis';
 export const RELEASE_BASE = 'https://github.com/shiguang-lab/global-app-skill/releases';
 export const FEED = `${RELEASE_BASE}/latest/download/latest.json`;
 export const RELEASE_TAG = /^(?:v|resources-v)(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;

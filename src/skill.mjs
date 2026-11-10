@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { VERSION } from './protocol.mjs';
+import { SKILL_NAME, VERSION } from './protocol.mjs';
 import { discoverSkillDirectories, rememberInstallation } from './installations.mjs';
 
 async function stat(filename) {
@@ -35,7 +35,8 @@ async function writeSkill(target, existingOnly) {
     let previous;
     try { previous = await readFile(skillPath, 'utf8'); }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
-    if (existingOnly && !previous?.includes('global-app-skill@latest context resolve')) {
+    const installedName = previous?.match(/^name: ([a-z0-9-]+)$/m)?.[1];
+    if (existingOnly && (installedName !== SKILL_NAME || !previous?.includes('global-app-skill@latest context resolve'))) {
       return { skillPath, status: 'skipped', reason: 'not-managed' };
     }
     const installedVersion = previous?.match(/^<!-- global-app-skill-version: (\d+\.\d+\.\d+) -->$/m)?.[1];
@@ -46,7 +47,7 @@ async function writeSkill(target, existingOnly) {
         if (installed[i] > bundled[i]) return { skillPath, status: 'skipped', reason: 'newer-installed', installedVersion };
       }
     }
-    const bundled = await readFile(new URL('../skills/overseas-app-research/SKILL.md', import.meta.url), 'utf8');
+    const bundled = await readFile(new URL(`../skills/${SKILL_NAME}/SKILL.md`, import.meta.url), 'utf8');
     const content = bundled.trimEnd() + `\n\n<!-- global-app-skill-version: ${VERSION} -->\n`;
     if (previous === content) return { skillPath, status: 'unchanged' };
     const temporary = path.join(target, `.SKILL-${randomUUID()}.tmp`);
@@ -59,7 +60,7 @@ async function writeSkill(target, existingOnly) {
 }
 
 export async function installSkill(directory, options = {}) {
-  const target = path.resolve(directory || path.join(options.home || homedir(), '.agents/skills/overseas-app-research'));
+  const target = path.resolve(directory || path.join(options.home || homedir(), '.agents/skills', SKILL_NAME));
   const result = await writeSkill(target, false);
   await rememberInstallation(target, options);
   return { ok: true, ...result };

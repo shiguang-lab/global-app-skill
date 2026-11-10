@@ -2,10 +2,9 @@ import { lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { sha256 } from './protocol.mjs';
+import { sha256, SKILL_NAME } from './protocol.mjs';
 
 export const SKILL_ROOTS = ['.agents/skills', '.codex/skills', '.claude/skills', '.cursor/skills', '.gemini/skills', '.kiro/skills'];
-const skillName = 'overseas-app-research';
 
 function stateRoot({ home = homedir(), env = process.env, stateDirectory } = {}) {
   return path.resolve(stateDirectory || path.join(env.XDG_STATE_HOME || path.join(home, '.local/state'), 'global-app-skill'));
@@ -55,8 +54,8 @@ async function projectDirectories(cwd) {
 export async function discoverSkillDirectories(options = {}) {
   const { home = homedir(), env = process.env, cwd = process.cwd() } = options;
   const bases = [path.resolve(home), ...await projectDirectories(cwd)];
-  const candidates = bases.flatMap(base => SKILL_ROOTS.map(root => path.join(base, root, skillName)));
-  if (env.CODEX_HOME) candidates.push(path.resolve(env.CODEX_HOME, 'skills', skillName));
+  const candidates = bases.flatMap(base => SKILL_ROOTS.map(root => path.join(base, root, SKILL_NAME)));
+  if (env.CODEX_HOME) candidates.push(path.resolve(env.CODEX_HOME, 'skills', SKILL_NAME));
   candidates.push(...await registeredDirectories(options));
   const unique = [...new Set(candidates)];
   const present = await Promise.all(unique.map(directory => exists(path.join(directory, 'SKILL.md'))));

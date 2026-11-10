@@ -3,7 +3,7 @@ import { parseArgs } from 'node:util';
 import { installSkill, syncInstalledSkills } from './skill.mjs';
 import { resolveContext } from './resources.mjs';
 import { runScript } from './run.mjs';
-import { validateMode, VERSION } from './protocol.mjs';
+import { SKILL_NAME, validateMode, VERSION } from './protocol.mjs';
 
 const usage = `global-app-skill ${VERSION}
   skill install [--dir ABSOLUTE_SKILL_DIRECTORY]
@@ -11,7 +11,7 @@ const usage = `global-app-skill ${VERSION}
   run SCRIPT [--mode download|research|ued] [--skill-dir PATH] [--resource-root PATH] [--cache-dir PATH] [--feed URL] -- SCRIPT_ARGS
   --version
 
-skill install writes only SKILL.md; default: ~/.agents/skills/overseas-app-research.
+skill install writes only SKILL.md; default: ~/.agents/skills/${SKILL_NAME}.
 context resolve and run synchronize existing managed skill entries from this CLI bundle.
 Skill locations are discovered from client user/project directories and CLI installation records.
 run uses a verified pinned snapshot when --resource-root is supplied; otherwise it resolves current resources.

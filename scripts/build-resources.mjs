@@ -2,7 +2,7 @@ import { lstat, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { identity, sha256, validateManifest, VERSION } from '../src/protocol.mjs';
+import { identity, sha256, SKILL_NAME, validateManifest, VERSION } from '../src/protocol.mjs';
 
 export async function buildResources(source, output, { check = false, releaseTag = `v${VERSION}` } = {}) {
   const entries = [];
@@ -46,6 +46,6 @@ export async function buildResources(source, output, { check = false, releaseTag
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const root = fileURLToPath(new URL('../', import.meta.url));
-  const manifest = await buildResources(path.join(root, 'resources/overseas-app-research'), path.join(root, 'dist/resources'), { check: process.argv.includes('--check') });
+  const manifest = await buildResources(path.join(root, 'resources', SKILL_NAME), path.join(root, 'dist/resources'), { check: process.argv.includes('--check') });
   console.log(JSON.stringify({ resourceHash: manifest.resourceHash, files: manifest.files.length, bytes: manifest.size }));
 }

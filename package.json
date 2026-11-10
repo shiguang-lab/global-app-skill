@@ -1,6 +1,6 @@
 {
   "name": "global-app-skill",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Thin skill bootstrap and GitHub resource runner for overseas Android app research",
   "type": "module",
   "license": "UNLICENSED",
@@ -14,7 +14,7 @@
   "publishConfig": { "registry": "https://registry.npmjs.org/", "access": "public" },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "test:python": "python3 -m unittest discover -s resources/overseas-app-research/scripts -p 'test_*.py'",
+    "test:python": "python3 -m unittest discover -s resources/global-app-analysis/scripts -p 'test_*.py'",
     "resources:build": "node scripts/build-resources.mjs",
     "resources:check": "node scripts/build-resources.mjs --check",
     "release:prepare": "node scripts/release.mjs",

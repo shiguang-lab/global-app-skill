@@ -1,6 +1,6 @@
 # global-app-skill
 
-海外 Android App 调研 skill 的薄入口、资源更新器和脚本 CLI。保持 `overseas-app-research` 的下载、业务调研与 UED 图册三个分支。
+海外 Android App 调研 skill 的薄入口、资源更新器和脚本 CLI。保持 `global-app-analysis` 的下载、业务调研与 UED 图册三个分支。
 
 ## 安装
 
@@ -10,7 +10,7 @@
 npx -y --prefer-online global-app-skill@latest skill install
 ```
 
-默认只安装 `~/.agents/skills/overseas-app-research/SKILL.md`。也可用 `--dir /absolute/skills/overseas-app-research` 指定当前客户端实际使用的 skill 目录。所有目录使用完全相同的薄入口，只记录 CLI 版本，不写入安装路径。安装位置记录在本机状态目录，供 CLI 后续自动发现；该记录不放进 skill。已存在的 SKILL.md 会被原子替换，目录中的其他文件保留，符号链接入口拒绝覆盖。安装不下载 references，也不修改 MCP 或客户端配置。
+默认只安装 `~/.agents/skills/global-app-analysis/SKILL.md`。也可用 `--dir /absolute/skills/global-app-analysis` 指定当前客户端实际使用的 skill 目录。所有目录使用完全相同的薄入口，只记录 CLI 版本，不写入安装路径。安装位置记录在本机状态目录，供 CLI 后续自动发现；该记录不放进 skill。已存在的 SKILL.md 会被原子替换，目录中的其他文件保留，符号链接入口拒绝覆盖。安装不下载 references，也不修改 MCP 或客户端配置。
 
 ## 执行
 
@@ -22,7 +22,7 @@ npx -y --prefer-online global-app-skill@latest context resolve --mode research
 
 `context resolve` 和 `run` 执行前由 CLI 自动定位已安装的薄入口，更新为当前 CLI 捆绑的版本。入口只调用通用命令，不传安装路径。入口使用 `npx --prefer-online ...@latest`，因此发布新版 CLI 后，下一次执行会更新本地 SKILL.md。
 
-CLI 检查以下位置中的 `overseas-app-research/SKILL.md`：用户目录下的 `.agents/skills`、`.codex/skills`、`.claude/skills`、`.cursor/skills`、`.gemini/skills`、`.kiro/skills`；当前目录至最近 Git 仓库根目录之间的相同项目级目录；`CODEX_HOME/skills`；以及 CLI 安装时登记的目录。不在 Git 仓库内时，项目级发现只检查当前目录，不遍历其他工作区。
+CLI 检查以下位置中的 `global-app-analysis/SKILL.md`：用户目录下的 `.agents/skills`、`.codex/skills`、`.claude/skills`、`.cursor/skills`、`.gemini/skills`、`.kiro/skills`；当前目录至最近 Git 仓库根目录之间的相同项目级目录；`CODEX_HOME/skills`；以及 CLI 安装时登记的目录。不在 Git 仓库内时，项目级发现只检查当前目录，不遍历其他工作区。
 
 自定义安装目录通过 `skill install --dir ...` 登记在 `${XDG_STATE_HOME:-~/.local/state}/global-app-skill/installations/`，不需要把路径写进 SKILL.md。复制到另一台机器的标准 skill 目录后，CLI 会按该机器环境重新发现；移到标准目录以外的位置时，再运行一次安装命令登记新位置。`--skill-dir` 仅保留为手动指定本次更新目标的可选参数，薄入口无需使用。
 
@@ -42,11 +42,11 @@ npx -y --prefer-online global-app-skill@latest run preflight --mode research --r
 
 | 路径 | 职责 |
 |---|---|
-| `skills/overseas-app-research/SKILL.md` | 安装到客户端的薄入口 |
+| `skills/global-app-analysis/SKILL.md` | 安装到客户端的薄入口 |
 | `src/` | npm CLI：安装、资源解析、校验、脚本运行 |
-| `resources/overseas-app-research/references/` | 主流程和各阶段操作文档 |
-| `resources/overseas-app-research/scripts/` | 原有 Python 脚本及回归测试 |
-| `resources/overseas-app-research/examples/` | 业务报告模板 |
+| `resources/global-app-analysis/references/` | 主流程和各阶段操作文档 |
+| `resources/global-app-analysis/scripts/` | 原有 Python 脚本及回归测试 |
+| `resources/global-app-analysis/examples/` | 业务报告模板 |
 | `scripts/build-resources.mjs` | 生成确定性的资源包与清单 |
 | `.github/workflows/publish.yml` | tag 触发的构建、GitHub Release 和 npm 发布 |
 | `scripts/release.mjs` | tag 校验、打包、校验和及发布资产核对 |

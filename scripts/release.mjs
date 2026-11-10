@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify, parseArgs } from 'node:util';
 import { buildResources } from './build-resources.mjs';
-import { RELEASE_TAG, sha256, validateManifest, VERSION } from '../src/protocol.mjs';
+import { RELEASE_TAG, sha256, SKILL_NAME, validateManifest, VERSION } from '../src/protocol.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const exec = promisify(execFile);
@@ -34,7 +34,7 @@ export async function prepareRelease(tag, directory = path.join(root, 'dist/rele
   const plan = releasePlan(tag);
   await rm(directory, { recursive: true, force: true });
   await mkdir(directory, { recursive: true });
-  const manifest = await buildResources(path.join(root, 'resources/overseas-app-research'), directory, { releaseTag: tag });
+  const manifest = await buildResources(path.join(root, 'resources', SKILL_NAME), directory, { releaseTag: tag });
   const temporary = await mkdtemp(path.join(tmpdir(), 'global-app-skill-pack-'));
   try {
     const packed = JSON.parse((await exec('npm', ['pack', '--json', '--pack-destination', temporary], { cwd: root })).stdout)[0];
@@ -46,7 +46,7 @@ export async function prepareRelease(tag, directory = path.join(root, 'dist/rele
     checksums.push(`${sha256(await readFile(path.join(directory, name)))}  ${name}`);
   }
   await writeFile(path.join(directory, 'SHA256SUMS'), checksums.join('\n') + '\n');
-  await buildResources(path.join(root, 'resources/overseas-app-research'), directory, { check: true, releaseTag: tag });
+  await buildResources(path.join(root, 'resources', SKILL_NAME), directory, { check: true, releaseTag: tag });
   await verifyRelease(directory);
   return { ...plan, directory, resourceHash: manifest.resourceHash };
 }
