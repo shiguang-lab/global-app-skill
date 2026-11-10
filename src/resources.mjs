@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { gunzipSync } from 'node:zlib';
-import { FEED, MAX_BYTES, MODES, sha256, validateManifest, validateMode } from './protocol.mjs';
+import { bundleUrl, FEED, MAX_BYTES, MODES, sha256, validateManifest, validateMode } from './protocol.mjs';
 
 async function download(url, limit) {
   const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(30000) });
@@ -61,7 +61,7 @@ export async function resolveContext({ mode, feed = FEED, cacheDir, progress = (
   let updated = false;
   if (!(await validSnapshot(resourceRoot, manifest.resourceHash))) {
     progress(`Downloading and verifying ${manifest.files.length} resource files`);
-    const bytes = await download(new URL(manifest.bundle, url), MAX_BYTES);
+    const bytes = await download(bundleUrl(manifest, url), MAX_BYTES);
     if (bytes.length !== manifest.size || sha256(bytes) !== manifest.sha256) throw new Error('Resource bundle integrity check failed');
     const bundle = JSON.parse(gunzipSync(bytes, { maxOutputLength: MAX_BYTES * 2 }).toString('utf8'));
     if (!Array.isArray(bundle.files) || bundle.files.length !== manifest.files.length) throw new Error('Invalid resource bundle');
@@ -109,7 +109,7 @@ export async function resolveContext({ mode, feed = FEED, cacheDir, progress = (
   progress(updated ? 'Resource snapshot ready' : 'Verified cached snapshot is current');
   const mustRead = ['references/cli.md', 'references/guide.md', 'references/orchestration.md', MODES[mode]]
     .map(name => path.join(resourceRoot, name));
-  return { ok: true, source: url.hostname === 'raw.githubusercontent.com' ? 'github' : 'custom', feed: url.href,
-    mode, resourceHash: manifest.resourceHash, resourceRoot,
+  return { ok: true, source: url.origin === 'https://github.com' ? 'github' : 'custom', feed: url.href,
+    mode, releaseTag: manifest.releaseTag, resourceHash: manifest.resourceHash, resourceRoot,
     referencePath: path.join(resourceRoot, 'references/guide.md'), mustRead, updated };
 }

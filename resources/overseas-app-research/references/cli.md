@@ -1,6 +1,6 @@
 # 动态资源与 CLI 执行
 
-`context resolve` 在每个新任务开始检查 GitHub 的 `releases/latest.json`，下载并验证 references、scripts 和 examples。返回的 `resourceHash` 对应完整快照；`mustRead` 是本次模式开始前需依次读取的文件。网络失败、协议不兼容或完整性检查失败时停止依赖工作，不使用过期缓存冒充最新资源。
+`context resolve` 在每个新任务开始检查 GitHub 最新正式 Release 的 `latest.json` 附件，再按清单中的 `releaseTag` 下载该 tag 下的资源包，验证 references、scripts 和 examples。资源由 tag 触发的 Actions 构建并上传，不从 main 分支读取生成包。返回的 `resourceHash` 对应完整快照；`mustRead` 是本次模式开始前需依次读取的文件。网络失败、协议不兼容或完整性检查失败时停止依赖工作，不使用过期缓存冒充最新资源。
 
 同一任务保留返回的绝对 `resourceRoot`，后续读文档、读模板和执行脚本均使用该目录；模式变化时读取该快照内相应工作流，不必重取新版本。新任务重新 resolve。资源只读，产物写入用户工作区，不能写入缓存或 skill 安装目录。
 

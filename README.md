@@ -18,7 +18,7 @@ npx -y --prefer-online global-app-skill@latest skill install
 npx -y --prefer-online global-app-skill@latest context resolve --mode research
 ```
 
-`--mode` 为 `download`、`research` 或 `ued`。CLI 每次查询 GitHub 的 `releases/latest.json`，验证清单、压缩包及逐文件 SHA-256，返回绝对 `resourceRoot` 和有序 `mustRead`。agent 读取这些文件后按原工作流编排任务。
+`--mode` 为 `download`、`research` 或 `ued`。CLI 每次查询 GitHub 最新正式 Release 的 `latest.json` 附件，验证清单、压缩包及逐文件 SHA-256，返回绝对 `resourceRoot` 和有序 `mustRead`。agent 读取这些文件后按原工作流编排任务。
 
 `context resolve` 和 `run` 执行前会将已安装的薄入口同步为当前 CLI 捆绑的版本。入口使用 `npx --prefer-online ...@latest`，因此发布新版 CLI 后，下一次执行会更新本地 SKILL.md。传入 `--skill-dir /absolute/skill-directory` 可精确定位安装目录；安装器已自动写入该参数。未传入时仅检查 `~/.agents/skills/overseas-app-research` 和 `${CODEX_HOME:-~/.codex}/skills/overseas-app-research` 中现有的 CLI 入口，不创建新 skill，不覆盖手工维护的其他实现或符号链接，也不降级更新的入口。
 
@@ -44,9 +44,11 @@ npx -y --prefer-online global-app-skill@latest run preflight --mode research --r
 | `resources/overseas-app-research/scripts/` | 原有 Python 脚本及回归测试 |
 | `resources/overseas-app-research/examples/` | 业务报告模板 |
 | `scripts/build-resources.mjs` | 生成确定性的资源包与清单 |
-| `releases/` | GitHub 托管的最新清单与按哈希命名的资源包 |
+| `.github/workflows/publish.yml` | tag 触发的构建、GitHub Release 和 npm 发布 |
+| `scripts/release.mjs` | tag 校验、打包、校验和及发布资产核对 |
+| `dist/release/` | 本次构建的 Release 资产，不提交到 Git |
 
-分发源为 `https://raw.githubusercontent.com/shiguang-lab/global-app-skill/main/releases/latest.json`。npm 包仅包含 CLI 与薄 skill，工作流资源独立从 GitHub 更新，无需为文档或 Python 脚本修改发布 npm 新版本。
+分发源为 `https://github.com/shiguang-lab/global-app-skill/releases/latest/download/latest.json`。资源源码在仓库的 `resources/`，正式生成包由 Actions 上传到 GitHub Release。清单中的 `releaseTag` 决定资源包的固定下载地址，因此 latest 切换不会混用不同 Release 的清单和包。npm 包仅包含 CLI 与薄 skill；工作流资源可独立发布，不要求发布 npm 新版本。
 
 缓存默认位于 `~/.cache/global-app-skill/releases/<resourceHash>`，可用 `GLOBAL_APP_SKILL_CACHE` 或 `--cache-dir` 指定。下载先在临时目录完整校验，再发布快照。网络或完整性失败会报错，不静默使用旧资源；损坏的固定快照拒绝执行，重新 resolve 可修复。旧快照保留供现有任务使用。运行产物写入工作区，不写回资源缓存。
 
@@ -55,14 +57,44 @@ npx -y --prefer-online global-app-skill@latest run preflight --mode research --r
 在当前仓库编辑资源后：
 
 ```sh
-npm run resources:build
 npm test
 npm run test:python
-npm run resources:check
+npm run release:prepare
 ```
 
-Python 回归测试中的长图部分需要 Pillow。CLI 无第三方 Node 依赖。`--feed` 可指定 HTTPS 清单，测试允许 loopback HTTP，用于在发布前验证同一协议。
+Python 回归测试中的长图部分需要 Pillow。CLI 无第三方 Node 依赖。`--feed` 可指定 HTTPS 清单，测试允许 loopback HTTP。`release:prepare` 在本地预演与 Actions 相同的构建，默认 tag 为 `v<package.json.version>`，也可指定 `RELEASE_TAG`。构建结果进入忽略的 `dist/release/`，不手工上传。
 
-将资源源文件、`releases/latest.json` 和新资源包一起提交并 push 到 GitHub 的 `main`。保留旧资源包，避免读到旧清单的客户端遇到 404。只修改资源时到此即可，后续任务自动获取最新快照；每个快照完整包含 references、scripts 和 examples，删除的源文件不会残留到新快照。
+### 发布 CLI、薄入口与资源
 
-修改 CLI 或薄入口时更新 `package.json` 的版本，完成检查并推送代码后执行 `npm publish`。`prepublishOnly` 会执行 Node/Python 测试和资源一致性检查。初次发布需要 npm 登录和账号所要求的发布认证；GitHub 仓库需公开可读，才能使用默认免认证资源源。当前项目未授予开源许可证，npm 元数据使用 `UNLICENSED`。
+修改源码并更新 `package.json` 的版本，提交、push 后创建对应版本的 tag。例如版本为 `0.1.3` 时：
+
+```sh
+git tag v0.1.3
+git push origin v0.1.3
+```
+
+`publish.yml` 校验 tag 与 package.json 一致，执行 Node/Python 测试，从 tag 源码生成以下资产：
+
+- `latest.json`：资源清单、Release tag、最低 CLI 版本、逐文件哈希。
+- `<resourceHash>.json.gz`：references、scripts、examples 的完整快照。
+- `global-app-skill.tgz`：同一 tag 构建的 CLI 安装包。
+- `SHA256SUMS`：上述三个资产的校验和。
+
+Actions 先创建草稿 Release，上传所有已验证资产后发布为 latest，随后把同一个 CLI tgz 发布到 npm。npm 发布失败不会删除已经完整发布的 GitHub Release。重跑时先核对已发布资产；正式 Release 不覆盖不同字节的包。
+
+### 仅发布资源
+
+修改资源源码并提交，创建独立的资源 tag，例如：
+
+```sh
+git tag resources-v0.1.4
+git push origin resources-v0.1.4
+```
+
+该 tag 只发布 GitHub Release，跳过 npm。客户端下次 resolve 自动获取新资源。资源工作流仍包含完整快照，删除的源文件不会残留到新快照。已有任务继续使用其固定快照。不要删除历史 Release 的资源资产。
+
+### 一次性配置 npm Trusted Publisher
+
+在 npm 的 `global-app-skill` 包 Settings 中配置 GitHub Actions Trusted Publisher：组织 `shiguang-lab`、仓库 `global-app-skill`、工作流文件 `publish.yml`、允许 `npm publish`，不设置 environment。工作流使用 `id-token: write` 和 npm OIDC，不保存本机 token。GitHub Release 使用 Actions 自带的 `GITHUB_TOKEN` 与 `contents: write`。
+
+以后只推 tag，由 Actions 发布，不在本机执行 `npm publish`。当前项目未授予开源许可证，npm 元数据使用 `UNLICENSED`。

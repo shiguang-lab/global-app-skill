@@ -2,7 +2,9 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
 export const VERSION = JSON.parse(readFileSync(new URL('../package.json', import.meta.url))).version;
-export const FEED = 'https://raw.githubusercontent.com/shiguang-lab/global-app-skill/main/releases/latest.json';
+export const RELEASE_BASE = 'https://github.com/shiguang-lab/global-app-skill/releases';
+export const FEED = `${RELEASE_BASE}/latest/download/latest.json`;
+export const RELEASE_TAG = /^(?:v|resources-v)(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;
 export const MAX_BYTES = 16 * 1024 * 1024;
 export const MODES = {
   download: 'references/download-workflow.md',
@@ -20,7 +22,7 @@ export function validateMode(mode) {
 
 export function validateManifest(manifest) {
   const hash = /^[a-f0-9]{64}$/;
-  if (manifest?.schemaVersion !== 1 || !hash.test(manifest.resourceHash) ||
+  if (manifest?.schemaVersion !== 1 || !RELEASE_TAG.test(manifest.releaseTag) || !hash.test(manifest.resourceHash) ||
       !/^\d+\.\d+\.\d+$/.test(manifest.minCliVersion) ||
       !Array.isArray(manifest.files) || !manifest.files.length || manifest.files.length > 1024 ||
       manifest.bundle !== `${manifest.resourceHash}.json.gz` || !hash.test(manifest.sha256) ||
@@ -49,4 +51,14 @@ export function validateManifest(manifest) {
     if (installed[i] < minimum[i]) throw new Error(`Resources require CLI >=${manifest.minCliVersion}; rerun with global-app-skill@latest`);
   }
   return manifest;
+}
+
+export function bundleUrl(manifest, feed) {
+  const url = new URL(feed);
+  if (url.origin === 'https://github.com' && url.pathname.startsWith('/shiguang-lab/global-app-skill/releases/')) {
+    // Pin the bundle to the manifest's release, even if "latest" advances
+    // between fetching the manifest and fetching its archive.
+    return new URL(`${RELEASE_BASE}/download/${manifest.releaseTag}/${manifest.bundle}`);
+  }
+  return new URL(manifest.bundle, url);
 }

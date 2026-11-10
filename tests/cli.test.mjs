@@ -9,7 +9,7 @@ import { promisify } from 'node:util';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { test } from 'node:test';
 import { buildResources } from '../scripts/build-resources.mjs';
-import { identity, sha256, SCRIPTS, validateManifest, VERSION } from '../src/protocol.mjs';
+import { bundleUrl, FEED, identity, sha256, SCRIPTS, validateManifest, VERSION } from '../src/protocol.mjs';
 import { readSnapshot, resolveContext } from '../src/resources.mjs';
 import { installSkill, syncInstalledSkills } from '../src/skill.mjs';
 
@@ -79,6 +79,17 @@ test('GitHub feed changes update resources independently and keep the old task s
   assert.match(await readFile(path.join(second.resourceRoot, 'references/guide.md'), 'utf8'), /Updated fixture/);
   assert.doesNotMatch(await readFile(path.join(first.resourceRoot, 'references/guide.md'), 'utf8'), /Updated fixture/);
   await readSnapshot(first.resourceRoot);
+});
+
+test('Release manifests pin archives to their own tag instead of the moving latest alias', async t => {
+  const f = await fixture(t);
+  const oldManifest = { ...f.manifest, releaseTag: 'resources-v0.1.4' };
+  assert.equal(bundleUrl(oldManifest, FEED).href,
+    `https://github.com/shiguang-lab/global-app-skill/releases/download/resources-v0.1.4/${oldManifest.bundle}`);
+  assert.equal(bundleUrl({ ...oldManifest, releaseTag: 'v0.1.5' }, FEED).href,
+    `https://github.com/shiguang-lab/global-app-skill/releases/download/v0.1.5/${oldManifest.bundle}`);
+  assert.equal(bundleUrl(oldManifest, f.options.feed).origin, new URL(f.options.feed).origin);
+  assert.throws(() => validateManifest({ ...f.manifest, releaseTag: '../main' }), /Invalid resource manifest/);
 });
 
 test('pinned execution preserves args, cwd, progress and device-gate exit code without network', async t => {

@@ -1,0 +1,100 @@
+name: Publish tag
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+      - 'resources-v[0-9]*'
+permissions:
+  contents: read
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    outputs:
+      publish-npm: ${{ steps.plan.outputs.publish-npm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - run: python3 -m pip install Pillow
+      - name: Validate tag
+        id: plan
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync } from 'node:fs';
+          import { releasePlan } from './scripts/release.mjs';
+          const plan = releasePlan(process.env.RELEASE_TAG);
+          appendFileSync(process.env.GITHUB_OUTPUT, `publish-npm=${plan.publishNpm}\n`);
+          JS
+      - run: npm test
+      - run: npm run test:python
+      - name: Build verified release assets from tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: npm run release:prepare
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: dist/release/
+          if-no-files-found: error
+          compression-level: 0
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist/release
+      - run: node scripts/release.mjs --verify dist/release
+      - name: Publish complete GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" --json isDraft > dist/release-state.json; then
+            if jq -e '.isDraft == false' dist/release-state.json > /dev/null; then
+              gh release download "$RELEASE_TAG" --dir dist/remote
+              node scripts/release.mjs --verify dist/remote --compare dist/release
+              exit 0
+            fi
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --notes "Built and verified by GitHub Actions from tag $RELEASE_TAG. Assets: workflow manifest, resource archive, CLI tarball and SHA256SUMS."
+          fi
+          gh release upload "$RELEASE_TAG" dist/release/* --clobber
+          gh release edit "$RELEASE_TAG" --draft=false --latest
+  npm:
+    needs: [build, release]
+    if: needs.build.outputs.publish-npm == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org/
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist/release
+      - run: npm install -g npm@latest
+      - run: node scripts/release.mjs --verify dist/release
+      - name: Publish verified CLI through npm trusted publishing
+        run: npm publish dist/release/global-app-skill.tgz --access public --provenance

@@ -16,5 +16,4 @@ jobs:
       - run: python3 -m pip install Pillow
       - run: npm test
       - run: npm run test:python
-      - run: npm run resources:check
-      - run: npm pack --dry-run
+      - run: npm run release:prepare
