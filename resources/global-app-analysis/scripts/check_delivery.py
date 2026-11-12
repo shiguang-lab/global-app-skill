@@ -6,16 +6,12 @@ import json
 from pathlib import Path
 import re
 
+from task_ledger import limit, open_ledger, require
 
 CHECKS = {
     "research": {"10.1", "10.2", "10.3", "10.4"},
     "ued": {"album"},
 }
-
-
-def require(condition, message):
-    if not condition:
-        raise ValueError(message)
 
 
 def present(value):
@@ -47,6 +43,19 @@ def evidence_path(root, reference, label):
     return name
 
 
+def evidence_snapshot(root, reference, label, after=0):
+    path = (root / evidence_path(root, reference, label)).resolve()
+    modified = path.stat().st_mtime_ns
+    require(modified > after, f"{label}: evidence must be recorded after the checkpoint began")
+    return {"ref": reference, "path": str(path), "sha256": file_hash(path), "modified_ns": modified}
+
+
+def check_snapshot(root, snapshot, label):
+    current = evidence_snapshot(root, snapshot["ref"], label)
+    require(all(current[key] == snapshot[key] for key in ("ref", "path", "sha256")),
+            f"{label}: checkpoint evidence changed")
+
+
 def load_scope(root, name):
     scope = json.loads((root / name).read_text(encoding="utf-8"))
     require(type(scope["h5_in_scope"]) is bool, "scope must explicitly record whether H5 is in scope")
@@ -60,33 +69,36 @@ def revision(root, files, scope, scope_evidence):
     return hashlib.sha256(json.dumps(entries).encode()).hexdigest()
 
 
-def check_review(root, record, current, h5_in_scope, partial):
+def review_surfaces(record, h5_in_scope):
     targets = set(record["targets"])
     require(targets and targets <= CHECKS.keys(), "record the research and/or UED delivery targets")
     base = {"pages", "business"} if "research" in targets else {"pages"}
-    required = base | {"h5"} if h5_in_scope else base
-    rounds = record["rounds"]
+    return base | {"h5"} if h5_in_scope else base
+
+
+def check_retry_state(root, ledger, user_requested=False):
+    require(not ledger.pending, "record the result of every reserved retry before delivery")
+    require(not ledger.waiting or user_requested, "wait for the user's decision on: " + ", ".join(sorted(ledger.waiting)))
+    for event in ledger.events:
+        if event["event"] in {"finish", "resume", "cancel-review"}:
+            check_snapshot(root, event["evidence"], f"checkpoint {event['id']}")
+
+
+def check_review(root, ledger, record, current, h5_in_scope, partial):
+    required = review_surfaces(record, h5_in_scope)
+    rounds = ledger.rounds
+    require(ledger.active is None, "finish the open review before delivery")
+    check_retry_state(root, ledger, partial and record.get("partial", {}).get("reason") == "user_request")
     require(len(rounds) >= 2, "complete the first review and at least one separate re-review")
-    round_ids = set()
-    for wave in rounds:
-        require(present(wave["id"]) and wave["id"] not in round_ids, "review round IDs must be distinct")
-        round_ids.add(wave["id"])
-        require(present(wave["revision"]), "record the revision reviewed by each round")
-        planned = set(wave["surfaces"])
-        require(base <= planned <= base | {"h5"} and planned == wave["results"].keys(),
+    for start, finish in rounds:
+        require(set(start["surfaces"]) == finish["results"].keys(),
                 "a completed round must include every area planned for that round")
-        for area, result in wave["results"].items():
-            label = f"round {wave['id']}, {area}"
-            require(result["method"] in {"isolated", "in_session"}
-                    and result["status"] in {"passed", "needs_work", "partial_passed"},
-                    f"{label}: review area needs a method and verdict")
-            evidence_path(root, result["evidence"], label)
-    latest = rounds[-1]
-    require(latest["revision"] == current, "current facts require a new review from 9.1")
-    for wave in rounds:
-        if wave["revision"] == current:
-            require(set(wave["results"]) == required, "review must cover every area for the current scope")
-    require(sum(required <= wave["results"].keys() for wave in rounds) >= 2,
+        for area, result in finish["results"].items():
+            check_snapshot(root, result["evidence"], f"round {start['id']}, {area}")
+    latest_start, latest = rounds[-1]
+    require(latest_start["revision"] == current, "current facts require a new review from 9.1")
+    require(set(latest["results"]) == required, "review must cover every area for the current scope")
+    require(sum(required <= wave["results"].keys() for _, wave in rounds) >= 2,
             "complete two separate rounds covering every area for the current scope")
 
     unresolved = {key: item for key, item in record["issues"].items() if item["status"] != "closed"}
@@ -94,9 +106,7 @@ def check_review(root, record, current, h5_in_scope, partial):
         require(issue["status"] in {"open", "closed", "blocked"}, f"{issue_id}: issue needs a valid status")
         evidence_path(root, issue["evidence"], issue_id)
         if issue["status"] == "blocked":
-            require(all(present(issue.get(field)) for field in ("layer", "attempt", "resume")),
-                    f"{issue_id}: blocker needs a layer, attempt evidence and a resumption condition")
-            evidence_path(root, issue["attempt"], f"{issue_id} blocker")
+            check_blocker(root, ledger, issue_id, issue)
     if partial:
         permission = record["partial"]
         require(unresolved, "record the verified subset and remaining gaps")
@@ -104,7 +114,9 @@ def check_review(root, record, current, h5_in_scope, partial):
         require(all(result["status"] in {"passed", "partial_passed"} for result in latest["results"].values()),
                 "the latest review must approve the verified subset in every area")
         if permission["reason"] == "user_request":
-            evidence_path(root, permission["evidence"], "user request for partial delivery")
+            last_wait = max((e["at_ns"] for e in ledger.events if e["event"] == "wait"
+                             and ledger.waiting.intersection(e["keys"])), default=0)
+            evidence_snapshot(root, permission["evidence"], "user request for partial delivery", after=last_wait)
         else:
             require(permission["reason"] == "blocked"
                     and all(item["status"] == "blocked" for item in unresolved.values()),
@@ -113,6 +125,51 @@ def check_review(root, record, current, h5_in_scope, partial):
         require(not unresolved, "close all issues before formal delivery: " + ", ".join(unresolved))
         require(all(result["status"] == "passed" for result in latest["results"].values()),
                 "all review areas must pass for formal delivery")
+
+
+def check_blocker(root, ledger, issue_id, issue):
+    require(all(present(issue.get(field)) for field in ("layer", "resume")),
+            f"{issue_id}: blocker needs a layer and a resumption condition")
+    kind, paths = issue["kind"], issue["paths"]
+    require(kind in {"app_host", "other"} and paths, f"{issue_id}: record the blocker and evaluated paths")
+    if kind == "app_host":
+        require({"original_host", "isolated_host"} <= paths.keys(),
+                f"{issue_id}: evaluate the original host and an isolated App host path")
+    refs = set()
+    for name, path in paths.items():
+        label = f"{issue_id}, {name}"
+        if path["status"] == "attempted":
+            key = path["key"]
+            require(key.startswith("technical:") and key not in ledger.waiting,
+                    f"{label}: a pending budget decision is not a blocker")
+            attempt = max(((start, end) for start, end in ledger.attempts.values()
+                           if key in start["keys"] and start.get("path") == name),
+                          key=lambda pair: pair[0]["id"], default=None)
+            require(attempt and attempt[0]["id"] == path["attempt"] and attempt[1]["outcome"] == "failed",
+                    f"{label}: cite the latest completed failed attempt on this path")
+            ref = attempt[1]["evidence"]["ref"]
+        else:
+            require(path["status"] == "unavailable" and present(path.get("reason")),
+                    f"{label}: provide a verified reason the path cannot run")
+            ref = path["evidence"]
+            evidence_path(root, ref, label)
+        require(ref not in refs, f"{label}: provide distinct evidence for each path")
+        refs.add(ref)
+
+
+def finish_review(root, ledger, args, current):
+    start = ledger.active
+    require(start and start["id"] == args.id, "review ID is not open")
+    require(start["revision"] == current, "facts changed during review; cancel it and start a new round")
+    results = json.loads((root / args.results).read_text(encoding="utf-8"))
+    require(results.keys() == set(start["surfaces"]), "a completed round must include every planned area")
+    for area, result in results.items():
+        require(result["method"] in {"isolated", "in_session"}
+                and result["status"] in {"passed", "needs_work", "partial_passed"},
+                f"{area}: review area needs a method and verdict")
+        evidence = evidence_snapshot(root, result["evidence"], area, after=start["at_ns"])
+        results[area] = {**result, "evidence": evidence}
+    return ledger.add("finish-review", ref_id=args.id, results=results)
 
 
 def check_artifacts(root, record, current, partial):
@@ -133,22 +190,72 @@ def check_artifacts(root, record, current, partial):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("phase", choices=("revision", "review", "deliver"))
+    parser.add_argument("phase", choices=("init", "reserve", "finish", "resume", "revision", "begin-review",
+                                          "finish-review", "cancel-review", "check-ledger", "review", "deliver"))
     parser.add_argument("record", type=Path)
     parser.add_argument("--partial", action="store_true")
+    parser.add_argument("--key", action="append", help="Budget key; repeat to reserve both applicable budgets")
+    parser.add_argument("--action", help="The next action and what it will verify")
+    parser.add_argument("--path", help="Path ID for an attempt cited in blocker evidence")
+    parser.add_argument("--id", type=int, help="Checkpoint ID returned when the operation began")
+    parser.add_argument("--outcome", choices=("passed", "failed", "unavailable"))
+    parser.add_argument("--evidence", help="Evidence file or file#L<number>, relative to the task directory")
+    parser.add_argument("--results", help="JSON object of review results, keyed by review area")
     args = parser.parse_args()
     try:
-        record = json.loads(args.record.read_text(encoding="utf-8"))
         root = args.record.parent
-        h5_in_scope, scope_evidence = load_scope(root, record["scope"])
-        current = revision(root, record["facts"], record["scope"], scope_evidence)
-        if args.phase == "revision":
-            print(current)
-            return
-        check_review(root, record, current, h5_in_scope, args.partial)
-        if args.phase == "deliver":
-            check_artifacts(root, record, current, args.partial)
-        print(f"{args.phase} passed ({'partial' if args.partial else 'formal'})")
+        phase = args.phase
+        if phase in {"revision", "begin-review", "finish-review", "review", "deliver"}:
+            record = json.loads(args.record.read_text(encoding="utf-8"))
+            h5_in_scope, scope_evidence = load_scope(root, record["scope"])
+            current = revision(root, record["facts"], record["scope"], scope_evidence)
+            if phase == "revision":
+                print(current)
+                return
+        waiting = []
+        with open_ledger(root, initialize=phase == "init",
+                         write=phase not in {"check-ledger", "review", "deliver"}) as ledger:
+            if phase == "init":
+                print("task-checks.jsonl ready")
+            elif phase == "reserve":
+                require(args.key and present(args.action), "reserve requires --key and --action")
+                waiting = ledger.exhausted(args.key)
+                if waiting:
+                    ledger.add("wait", keys=waiting)
+                else:
+                    event = ledger.add("reserve", keys=args.key, action=args.action, path=args.path)
+                    print(json.dumps({"id": event["id"],
+                                      "remaining": {k: limit(k) - ledger.used[k] for k in args.key}}))
+            elif phase == "finish":
+                start = ledger.pending.get(args.id)
+                require(start and args.outcome, "finish requires an open --id and --outcome")
+                proof = evidence_snapshot(root, args.evidence, "retry result", after=start["at_ns"])
+                ledger.add("finish", ref_id=args.id, outcome=args.outcome, evidence=proof)
+            elif phase == "resume":
+                require(args.key and len(args.key) == 1, "resume requires one --key")
+                key = args.key[0]
+                wait = next((e["at_ns"] for e in reversed(ledger.events)
+                             if e["event"] == "wait" and key in e["keys"]), 0)
+                proof = evidence_snapshot(root, args.evidence, "user approval", after=wait)
+                ledger.add("resume", key=key, evidence=proof)
+            elif phase == "begin-review":
+                event = ledger.add("begin-review", revision=current, surfaces=sorted(review_surfaces(record, h5_in_scope)))
+                print(json.dumps({"id": event["id"], "revision": current, "surfaces": event["surfaces"]}))
+            elif phase == "finish-review":
+                print(f"review checkpoint {finish_review(root, ledger, args, current)['id']} sealed")
+            elif phase == "cancel-review":
+                proof = evidence_snapshot(root, args.evidence, "review cancellation")
+                ledger.add("cancel-review", ref_id=args.id, evidence=proof)
+            elif phase == "check-ledger":
+                check_retry_state(root, ledger)
+                print("check-ledger passed")
+            else:
+                check_review(root, ledger, record, current, h5_in_scope, args.partial)
+                if phase == "deliver":
+                    check_artifacts(root, record, current, args.partial)
+                print(f"{phase} passed ({'partial' if args.partial else 'formal'})")
+        if waiting:
+            parser.exit(3, "waiting for user approval: " + ", ".join(waiting) + "\n")
     except (KeyError, TypeError, AttributeError, ValueError, OSError) as error:
         parser.exit(1, f"{args.phase} refused: {error}\n")
 

@@ -5,9 +5,11 @@
 | 检查点 | 执行与通过条件 | 未通过时 |
 |---|---|---|
 | 第 1 步环境门槛 | 运行 `preflight`，按[环境硬门槛](guide.md#环境硬门槛)核对结果 | 停在第 1 步，报告缺少的条件 |
-| 第 4 步样本验收 | 运行 `verify`，按[校验与交付](verification.md)核对样本。纯下载在此完成验收 | 按[取包流程](download-workflow.md#4-校验归档)修正后重验 |
+| 第 4 步样本验收 | 运行 `verify`，按[校验与交付](verification.md)核对样本。纯下载交付前另执行 `check_delivery.py check-ledger "$TASK_DIR/review.json"` | 按[取包流程](download-workflow.md#4-校验归档)修正后重验；账本未通过时按回路规则处理 |
+| 重试或返工前 | 按[回路预算](loop-budget.md)先领取额度，执行后登记结果。取包搜索使用原取包账本 | 返回码 3 时暂停该回路和依赖交付，保存状态并询问用户；获准后续开一批 |
+| 每轮审查开始和结束 | 按[审查与交付记录](delivery-record.md)先开启该轮，再完成独立复核并封存该轮证据 | 补齐当前轮；事实版本变化时取消未完成轮次，按新版本重审 |
 | 第 9 步出口 | 按[审查与交付记录](delivery-record.md)运行 `check_delivery.py review`，记录通过结果 | 回[第 9 步审查](review-workflow.md)补齐问题，事实变化回 9.1 |
-| 第 10 步交付前 | 完成[报告审查](report-review-workflow.md)或[图册验收](ued-workflow.md#交付验收与进度)，对实际要发出的文件运行 `check_delivery.py deliver`，记录通过结果后发出 | 补齐审查或成品检查，按对应流程重验 |
+| 第 10 步交付前 | 完成[报告审查](report-review-workflow.md)或[图册验收](ued-workflow.md#交付验收与进度)，对实际要发出的文件运行 `check_delivery.py deliver`。通过结果须覆盖回路账本、阻塞路径、复审和成品 | 补齐账本、证据或成品检查，按对应流程重验 |
 
 复用旧报告、重发已有报告链接和提交阶段性结果都走第 9、10 步检查。把准备交付的实际文件纳入当前任务记录，核对原有证据与当前范围和版本，再运行检查。旧报告的存在、以前的验收结论和本次补测各自作为证据。
 
