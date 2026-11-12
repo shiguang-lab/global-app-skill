@@ -67,6 +67,48 @@ class AttemptLedgerTests(unittest.TestCase):
         self.assertEqual(len(self.data["search_rounds"]), 3)
         self.assertEqual(attempts.summary(self.data)["search_rounds_remaining"], 0)
 
+    def test_resume_search_opens_only_one_batch_and_preserves_history(self):
+        with self.assertRaisesRegex(ValueError, "current exhausted"):
+            attempts.resume_search(self.data, 0, "Continue")
+        for n in range(1, 4):
+            attempts.search_round(self.data, [f"first batch {n}"])
+        item = attempts.begin(self.data, channel="mirror", method="web", url="https://one.test/app", search_round=3)
+        attempts.finish(self.data, item["id"], "failed")
+        with self.assertRaisesRegex(ValueError, "user's decision"):
+            attempts.resume_search(self.data, 3, " ")
+        attempts.resume_search(self.data, 3, "User confirmed another batch using local-language queries")
+        self.assertEqual(attempts.summary(self.data)["search_rounds_remaining"], 3)
+        with self.assertRaisesRegex(ValueError, "current exhausted"):
+            attempts.resume_search(self.data, 3, "Duplicate confirmation")
+        with self.assertRaisesRegex(ValueError, "already used"):
+            attempts.search_round(self.data, ["first batch 1"])
+        for n in range(4, 7):
+            self.assertEqual(attempts.search_round(self.data, [f"second batch {n}"])["round"], n)
+        with self.assertRaisesRegex(ValueError, "already attempted"):
+            attempts.begin(self.data, channel="mirror", method="browser", url="https://one.test/new", search_round=6)
+        with self.assertRaisesRegex(ValueError, "Three search rounds exhausted"):
+            attempts.search_round(self.data, ["another query"])
+        with self.assertRaisesRegex(ValueError, "current exhausted"):
+            attempts.resume_search(self.data, 3, "Stale confirmation")
+        attempts.resume_search(self.data, 6, "User confirmed another batch for version-specific queries")
+        self.assertEqual(attempts.search_round(self.data, ["third batch 7"])["round"], 7)
+
+    def test_cli_resume_search_persists_confirmation_on_existing_ledger(self):
+        for n in range(1, 4):
+            attempts.search_round(self.data, [f"first batch {n}"])
+        with tempfile.TemporaryDirectory() as tmp:
+            ledger = Path(tmp) / "attempts.json"
+            ledger.write_text(json.dumps(self.data))
+            argv = ["attempts.py", "resume-search", "--ledger", str(ledger), "--after-round", "3",
+                    "--reason", "User confirmed a new batch"]
+            with mock.patch("sys.argv", argv), contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(attempts.main(), 0)
+                self.assertEqual(attempts.main(), 1)
+            saved = json.loads(ledger.read_text())
+            self.assertEqual(saved["search_rounds"], self.data["search_rounds"])
+            self.assertEqual(saved["search_resumptions"][0]["after_round"], 3)
+            self.assertEqual(attempts.summary(saved)["search_rounds_remaining"], 3)
+
     def test_omitting_round_does_not_bypass_search_limit(self):
         for n in range(1, 4):
             attempts.search_round(self.data, [f"com.example.app mirror angle {n}"])

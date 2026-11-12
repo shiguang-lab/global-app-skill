@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-target download attempts, source deduplication and three Web Search rounds."""
+"""Per-target download attempts, source deduplication and bounded Web Search batches."""
 import argparse
 import datetime
 import json
@@ -20,6 +20,7 @@ FAMILIES = {
 }
 STATUSES = ("started", "failed", "waiting_user", "dependency_missing", "downloaded", "verified",
             "verification_failed", "unavailable", "redirected", "old_version_only")
+SEARCH_ROUNDS_PER_BATCH = 3
 
 
 def now():
@@ -161,9 +162,25 @@ def finish(data, attempt_id, status, reason=None, resolved_urls=(), artifact=Non
     return item
 
 
+def search_rounds_remaining(data):
+    resumptions = data.get("search_resumptions", [])
+    batch_start = resumptions[-1]["after_round"] if resumptions else 0
+    return SEARCH_ROUNDS_PER_BATCH - (len(data["search_rounds"]) - batch_start)
+
+
+def resume_search(data, after_round, reason):
+    if after_round != len(data["search_rounds"]) or search_rounds_remaining(data) != 0:
+        raise ValueError("Resume only the current exhausted search batch")
+    if not reason.strip():
+        raise ValueError("Record the user's decision and the next search approach")
+    item = {"after_round": after_round, "reason": reason.strip(), "resumed_at": now()}
+    data.setdefault("search_resumptions", []).append(item)
+    return item
+
+
 def search_round(data, queries):
-    if len(data["search_rounds"]) >= 3:
-        raise ValueError("Three search rounds exhausted; stop autonomous discovery")
+    if search_rounds_remaining(data) <= 0:
+        raise ValueError("Three search rounds exhausted; wait for user confirmation before resuming")
     normalize = lambda s: " ".join(s.split()).casefold()
     previous = {normalize(q) for r in data["search_rounds"] for q in r["queries"]}
     fresh = []
@@ -182,7 +199,7 @@ def search_round(data, queries):
 def summary(data):
     domains = sorted({host(u) for a in data["attempts"] for u in a["source_urls"]})
     return {"package": data["package"], "version_policy": data["version_policy"],
-            "search_rounds_used": len(data["search_rounds"]), "search_rounds_remaining": 3 - len(data["search_rounds"]),
+            "search_rounds_used": len(data["search_rounds"]), "search_rounds_remaining": search_rounds_remaining(data),
             "attempted_sources": sorted({s for a in data["attempts"] for s in a["sources"]}),
             "search_exclusion_terms": ["-site:" + d for d in domains], "attempts": data["attempts"]}
 
@@ -190,7 +207,7 @@ def summary(data):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
-    for name in ("init", "begin", "finish", "candidate", "search-round", "summary"):
+    for name in ("init", "begin", "finish", "candidate", "search-round", "resume-search", "summary"):
         s = sub.add_parser(name)
         s.add_argument("--ledger", required=True)
         if name == "init":
@@ -215,6 +232,9 @@ def main():
             s.add_argument("--url", required=True)
         elif name == "search-round":
             s.add_argument("--query", action="append", required=True)
+        elif name == "resume-search":
+            s.add_argument("--after-round", type=int, required=True)
+            s.add_argument("--reason", required=True, help="User's decision and the next search approach")
     args = p.parse_args()
     path = Path(args.ledger).expanduser().resolve()
     try:
@@ -239,9 +259,11 @@ def main():
             result = candidate(data, args.url)
         elif args.command == "search-round":
             result = search_round(data, args.query)
+        elif args.command == "resume-search":
+            result = resume_search(data, args.after_round, args.reason)
         else:
             result = summary(data)
-        if args.command in ("begin", "finish", "search-round"):
+        if args.command in ("begin", "finish", "search-round", "resume-search"):
             write_json(path, data)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0

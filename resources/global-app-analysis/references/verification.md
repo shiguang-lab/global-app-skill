@@ -41,7 +41,7 @@ python3 scripts/verify.py --input /absolute/sample-dir --package com.example.app
 
 以上文件由脚本生成；浏览器/手工取包时按相同含义记录来源清单再校验。不同来源重复包可在比对哈希后复用，保留各自来源记录。记录完整来源页面和不含凭证的 API 参数；带签名的短效下载 URL 只保存域名/路径去查询参数，匿名 token、Cookie、controller secret 不入交付。
 
-任务级 `attempts.json` 用于所有渠道的去重和最多 3 轮 Web Search 预算；使用 `scripts/attempts.py` 登记，继续同一目标时保留原文件。脚本状态与具体原因分开：例如 status=failed，reason=no_candidate/http_403/tls_error/region_restricted；登录/验证码等待用 waiting_user。校验失败将原 downloaded 尝试更新为 verification_failed，不能清空记录重新从头下载/搜索。记录观察到的事实，不猜 403 的原因。未完成条目列出下一步，不伪造运行结果。
+任务级 `attempts.json` 记录所有渠道去重和每批 3 轮 Web Search 额度。使用 `scripts/attempts.py` 登记，继续同一目标时保留原文件。脚本状态与具体原因分开，例如 status=failed，reason=no_candidate/http_403/tls_error/region_restricted；登录/验证码等待用 waiting_user。校验失败将原 downloaded 尝试更新为 verification_failed，沿用原记录及预算。记录观察到的事实，未完成条目列出下一步。
 
 设备 profile 变化的重新获取按 [关联取包](download-workflow.md#任务级尝试记录与去重) 建新记录并保留父尝试；目标版本和搜索预算不因此改变。
 
