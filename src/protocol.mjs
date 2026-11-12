@@ -7,6 +7,7 @@ export const RELEASE_BASE = 'https://github.com/shiguang-lab/global-app-skill/re
 export const FEED = `${RELEASE_BASE}/latest/download/latest.json`;
 export const RELEASE_TAG = /^(?:v|resources-v)(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;
 export const MAX_BYTES = 16 * 1024 * 1024;
+export const RULES_PATH = 'references/rules.md';
 export const MODES = {
   download: 'references/download-workflow.md',
   research: 'references/research-workflow.md',
@@ -21,7 +22,7 @@ export function validateMode(mode) {
   return mode;
 }
 
-export function validateManifest(manifest) {
+export function validateManifest(manifest, { requireRules = true } = {}) {
   const hash = /^[a-f0-9]{64}$/;
   if (manifest?.schemaVersion !== 1 || !RELEASE_TAG.test(manifest.releaseTag) || !hash.test(manifest.resourceHash) ||
       !/^\d+\.\d+\.\d+$/.test(manifest.minCliVersion) ||
@@ -44,7 +45,9 @@ export function validateManifest(manifest) {
   if (identity(manifest.files) !== manifest.resourceHash) throw new Error('Resource manifest hash mismatch');
   const required = ['references/guide.md', 'references/cli.md', 'references/orchestration.md',
     ...Object.values(MODES), ...SCRIPTS.map(name => `scripts/${name}.py`), 'scripts/apk_utils.py', 'scripts/progress.py'];
-  if (required.some(name => !seen.has(name))) throw new Error('Resource manifest is missing workflow files');
+  if (requireRules) required.unshift(RULES_PATH, 'references/delivery-record.md', 'scripts/check_delivery.py');
+  const missing = required.filter(name => !seen.has(name));
+  if (missing.length) throw new Error(`Resource manifest is missing workflow files: ${missing.join(', ')}`);
   const installed = VERSION.split('.').map(Number);
   const minimum = manifest.minCliVersion.split('.').map(Number);
   for (let i = 0; i < 3; i++) {

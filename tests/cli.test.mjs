@@ -48,7 +48,9 @@ test('fresh installation contains only a thin SKILL.md and is repeatable', async
   const target = path.join(root, 'global-app-analysis');
   const result = await installSkill(target);
   assert.deepEqual(await readdir(target), ['SKILL.md']);
-  assert.ok((await readFile(result.skillPath, 'utf8')).split('\n').length < 25);
+  const entry = await readFile(result.skillPath, 'utf8');
+  assert.ok(entry.split('\n').length < 27);
+  assert.match(entry, /## 必检入口[\s\S]*references\/rules\.md/);
   await Promise.all(Array.from({ length: 4 }, () => installSkill(target)));
   assert.deepEqual(await readdir(target), ['SKILL.md']);
   await symlink(target, path.join(root, 'linked'));
@@ -62,6 +64,7 @@ test('CLI resolves workflow files and reuses a verified cached bundle', async t 
   assert.equal(first.mode, 'ued');
   assert.equal(first.updated, true);
   assert.match(stderr, /snapshot ready/);
+  assert.equal(first.mustRead[0], path.join(first.resourceRoot, 'references/rules.md'));
   assert.ok(first.mustRead.some(name => name.endsWith('/ued-workflow.md')));
   for (const filename of first.mustRead) assert.ok((await lstat(filename)).isFile());
   assert.equal((await resolveContext(f.options)).updated, false);
@@ -69,17 +72,46 @@ test('CLI resolves workflow files and reuses a verified cached bundle', async t 
   assert.equal(f.counts.get(`/${f.manifest.bundle}`), 1);
 });
 
-test('GitHub feed changes update resources independently and keep the old task snapshot', async t => {
+test('resolver rejects a manifest missing the required rules file', async t => {
+  const f = await fixture(t);
+  const files = f.manifest.files.filter(file => file.path !== 'references/rules.md');
+  const resourceHash = identity(files);
+  await writeFile(path.join(f.output, 'latest.json'), JSON.stringify({
+    ...f.manifest, files, resourceHash, bundle: `${resourceHash}.json.gz`,
+  }));
+  await assert.rejects(resolveContext(f.options), /missing workflow files: references\/rules\.md/);
+  assert.equal(f.counts.has(`/${resourceHash}.json.gz`), false);
+});
+
+test('an in-flight task can still run against its pinned pre-rules snapshot', async t => {
+  const f = await fixture(t);
+  const files = f.manifest.files.filter(file =>
+    !['references/rules.md', 'references/delivery-record.md', 'scripts/check_delivery.py'].includes(file.path));
+  const resourceHash = identity(files);
+  const snapshot = path.join(f.directory, resourceHash);
+  await cp(f.source, snapshot, { recursive: true });
+  await writeFile(path.join(snapshot, 'manifest.json'), JSON.stringify({
+    ...f.manifest, releaseTag: 'resources-v0.1.10', files, resourceHash, bundle: `${resourceHash}.json.gz`,
+  }));
+  await assert.rejects(exec(process.execPath, [cli, 'run', 'preflight', '--skill-dir',
+    path.join(f.directory, 'not-installed-skill'), '--resource-root', snapshot]), error => {
+    assert.equal(error.code, 4);
+    assert.match(error.stderr, /fixture-progress/);
+    return true;
+  });
+});
+
+test('feed updates dynamic rules independently and keeps the old task snapshot', async t => {
   const f = await fixture(t);
   const first = await resolveContext(f.options);
-  const guide = path.join(f.source, 'references/guide.md');
-  await writeFile(guide, (await readFile(guide, 'utf8')) + '\nUpdated fixture workflow\n');
+  const rules = path.join(f.source, 'references/rules.md');
+  await writeFile(rules, (await readFile(rules, 'utf8')) + '\nUpdated fixture rules\n');
   const secondManifest = await buildResources(f.source, f.output);
   const second = await resolveContext(f.options);
   assert.notEqual(first.resourceRoot, second.resourceRoot);
   assert.equal(second.resourceHash, secondManifest.resourceHash);
-  assert.match(await readFile(path.join(second.resourceRoot, 'references/guide.md'), 'utf8'), /Updated fixture/);
-  assert.doesNotMatch(await readFile(path.join(first.resourceRoot, 'references/guide.md'), 'utf8'), /Updated fixture/);
+  assert.match(await readFile(second.mustRead[0], 'utf8'), /Updated fixture rules/);
+  assert.doesNotMatch(await readFile(first.mustRead[0], 'utf8'), /Updated fixture rules/);
   await readSnapshot(first.resourceRoot);
 });
 

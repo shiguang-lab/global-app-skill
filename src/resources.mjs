@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { gunzipSync } from 'node:zlib';
-import { bundleUrl, FEED, MAX_BYTES, MODES, sha256, validateManifest, validateMode } from './protocol.mjs';
+import { bundleUrl, FEED, MAX_BYTES, MODES, RULES_PATH, sha256, validateManifest, validateMode } from './protocol.mjs';
 
 async function download(url, limit) {
   const response = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(30000) });
@@ -20,12 +20,12 @@ async function download(url, limit) {
   return Buffer.concat(chunks);
 }
 
-export async function readSnapshot(resourceRoot) {
+export async function readSnapshot(resourceRoot, options) {
   resourceRoot = path.resolve(resourceRoot);
   if (!(await lstat(resourceRoot)).isDirectory()) throw new Error('Resource root must be a real directory');
   const manifestPath = path.join(resourceRoot, 'manifest.json');
   if (!(await lstat(manifestPath)).isFile()) throw new Error('Resource manifest must be a regular file');
-  const manifest = validateManifest(JSON.parse(await readFile(manifestPath, 'utf8')));
+  const manifest = validateManifest(JSON.parse(await readFile(manifestPath, 'utf8')), options);
   if (path.basename(resourceRoot) !== manifest.resourceHash) throw new Error('Resource root does not match its snapshot hash');
   for (const file of manifest.files) {
     let directory = resourceRoot;
@@ -107,7 +107,7 @@ export async function resolveContext({ mode, feed = FEED, cacheDir, progress = (
   }
   await readSnapshot(resourceRoot);
   progress(updated ? 'Resource snapshot ready' : 'Verified cached snapshot is current');
-  const mustRead = ['references/cli.md', 'references/guide.md', 'references/orchestration.md', MODES[mode]]
+  const mustRead = [RULES_PATH, 'references/cli.md', 'references/guide.md', 'references/orchestration.md', MODES[mode]]
     .map(name => path.join(resourceRoot, name));
   return { ok: true, source: url.origin === 'https://github.com' ? 'github' : 'custom', feed: url.href,
     mode, releaseTag: manifest.releaseTag, resourceHash: manifest.resourceHash, resourceRoot,

@@ -19,7 +19,7 @@ CLI run long_screenshot --mode ued --resource-root RESOURCE_ROOT -- --help
 
 可执行脚本：`preflight`、`download`、`export_device`、`verify`、`attempts`、`inspect_package`、`long_screenshot`。`apk_utils` 和 `progress` 是内部依赖。参数在 `--` 后原样传给 Python，先查相应脚本的 `--help`。CLI 保留当前工作目录、脚本 stdout/stderr 和退出码（包括设备门槛的退出码 4）；显式传 `--mode download` 使用 `/4`，业务/UED 使用 `/10`。
 
-其他文档中的 `python3 scripts/NAME.py 参数` 是相对于资源根的脚本示例；实际执行统一替换为 `CLI run NAME --mode MODE --resource-root RESOURCE_ROOT -- 参数`。示例中的 `scripts/`、`references/` 和 `examples/` 均相对于资源快照，不能相对于薄 SKILL.md 查找。
+上述可执行脚本的 `python3 scripts/NAME.py 参数` 示例使用 `CLI run NAME --mode MODE --resource-root RESOURCE_ROOT -- 参数` 执行。[审查与交付校验](delivery-record.md)直接使用已校验快照内的 Python 脚本。示例中的 `scripts/`、`references/` 和 `examples/` 均相对于资源快照。
 
 省略 `--resource-root` 时，`run` 会先 resolve 当前模式并验证资源；任务中应显式传入已读快照，避免版本变化。缓存损坏时 `run` 直接失败，重新 resolve 可下载修复；旧快照保留以便正在执行的任务继续使用。
 

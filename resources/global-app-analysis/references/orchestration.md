@@ -57,7 +57,7 @@ flowchart TD
         reviewRun{"9.2 分工审查：本轮结果？"}
         reviewFix["9.3 回相关步骤继续分析"]
         reviewRestart["9.4 从 9.1 重新审查"]
-        reviewGate["9.5 确认完成门槛并记录结论"]
+        reviewGate["9.5 校验当前版本与交付类型"]
 
         recover --> copyCheck
         copyCheck -->|"未使用副本或 passed"| profileCheck
@@ -89,15 +89,15 @@ flowchart TD
         reviewFix -->|"仅需修正草稿"| reviewRestart
         reviewRun -->|"首审无缺口"| reviewRestart
         reviewRestart --> reviewStart
-        reviewRun -->|"复审通过"| reviewGate
-        reviewRun -->|"真实阻塞或用户要求部分结果"| checkpoint
+        reviewRun -->|"当前版本的复审通过"| reviewGate
+        reviewFix -->|"真实阻塞或用户要求先看"| checkpoint
     end
 
     profileChange -->|"同来源同方法的关联尝试，不领取新搜索轮次"| fetch
 
-    reviewGate --> deliveryMode{"10 生成正式或获准阶段性交付物"}
-    checkpoint["先提供已核实结果；阻塞与恢复动作留在聊天和内部"]
-    checkpoint --> deliveryMode
+    reviewGate -->|"校验通过"| deliveryMode{"10 生成正式或获准阶段性交付物"}
+    checkpoint["保留缺口和恢复点，确定可交付范围"]
+    checkpoint --> reviewRestart
 
     deliveryMode -->|"业务目标"| businessOutput["业务报告、Mermaid、对应 UI 及扩展图册"]
     deliveryMode -->|"UED 目标"| uedOutput["页面目录、原图、长图、可浏览图册及图片包"]
@@ -109,8 +109,9 @@ flowchart TD
     businessCheck -->|"修改成品后从对应环节重审"| businessCheck
     uedCheck -->|"页面或范围变化：回第 9 步"| reviewStart
 
-    businessCheck -->|"呈现通过；离线版另做断网检查"| cleanup
-    uedCheck -->|"呈现通过；离线版另做断网检查"| cleanup
+    businessCheck -->|"成品检查通过"| finalGate["校验成品、检查记录与当前事实版本"]
+    uedCheck -->|"成品检查通过"| finalGate
+    finalGate -->|"校验通过后交付"| cleanup
     apkDelivery --> cleanup
     stopped --> cleanup
 
