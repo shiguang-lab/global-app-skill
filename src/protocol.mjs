@@ -22,7 +22,7 @@ export function validateMode(mode) {
   return mode;
 }
 
-export function validateManifest(manifest, { requireReviewWorkflow = true } = {}) {
+export function validateManifest(manifest, { requireRules = true } = {}) {
   const hash = /^[a-f0-9]{64}$/;
   if (manifest?.schemaVersion !== 1 || !RELEASE_TAG.test(manifest.releaseTag) || !hash.test(manifest.resourceHash) ||
       !/^\d+\.\d+\.\d+$/.test(manifest.minCliVersion) ||
@@ -52,12 +52,9 @@ export function validateManifest(manifest, { requireReviewWorkflow = true } = {}
     'examples/business-results-report/README.md', 'examples/business-results-report/report.html',
     'examples/business-results-report/main-flow.mmd',
     ...Object.values(MODES), ...SCRIPTS.map(name => `scripts/${name}.py`), 'scripts/apk_utils.py', 'scripts/progress.py'];
-  // These files were introduced with the review ledger. A task pinned to an
-  // older snapshot may still finish on it, so only fresh resolutions require them.
-  if (requireReviewWorkflow) required.unshift(RULES_PATH, 'references/delivery-record.md', 'scripts/check_delivery.py',
-    'examples/review-record/README.md', 'examples/review-record/review.json',
-    'examples/review-record/review-mixed.json', 'examples/review-record/scope.json',
-    'examples/review-record/results.json');
+  // A task pinned to an older snapshot may still finish on it; only a fresh
+  // resolution requires the current checkpoint document.
+  if (requireRules) required.unshift(RULES_PATH);
   const missing = required.filter(name => !seen.has(name));
   if (missing.length) throw new Error(`Resource manifest is missing workflow files: ${missing.join(', ')}`);
   const installed = VERSION.split('.').map(Number);

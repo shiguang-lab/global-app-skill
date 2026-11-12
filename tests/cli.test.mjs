@@ -87,10 +87,7 @@ test('resolver rejects a manifest missing the required rules file', async t => {
 
 test('an in-flight task can still run against its pinned pre-rules snapshot', async t => {
   const f = await fixture(t);
-  const files = f.manifest.files.filter(file =>
-    !['references/rules.md', 'references/delivery-record.md', 'scripts/check_delivery.py',
-      'examples/review-record/README.md', 'examples/review-record/review.json',
-      'examples/review-record/scope.json', 'examples/review-record/results.json'].includes(file.path));
+  const files = f.manifest.files.filter(file => file.path !== 'references/rules.md');
   const resourceHash = identity(files);
   const snapshot = path.join(f.directory, resourceHash);
   await cp(f.source, snapshot, { recursive: true });

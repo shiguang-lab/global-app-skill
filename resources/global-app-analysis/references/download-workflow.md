@@ -71,15 +71,6 @@
 - 指定版本必须满足。未指定时优先取可核实的较新版本；只有商店/API 明确给出查询时间和可用版本时才声称“该渠道当前返回版本”，不要直接声称全渠道最新版。
 - 此模块只处理 Android。用户实际要 iOS 时说明本 skill 不适用并停止，不能以 Android 样本代替 IPA。
 
-任务目录确定后先初始化校验账本，纯下载同样执行；`review.json` 可以稍后创建：
-
-```sh
-mkdir -p "$TASK_DIR"
-python3 "$RESOURCE_ROOT/scripts/check_delivery.py" init "$TASK_DIR/review.json"
-```
-
-取包账本是另一个文件，在第 3 步用 `attempts.py init` 单独建立，两者不要混用。
-
 ## 3. 获取安装包：有顺序的子工作流
 
 “就绪”表示所需权限、会话、设备、地区网络和工具已具备。无需为进入一个渠道提前要求用户完成所有登录和配置。

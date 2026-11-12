@@ -5,10 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+const references = path.join(root, 'resources/global-app-analysis/references');
 const skill = await readFile(path.join(root, 'skills/global-app-analysis/SKILL.md'), 'utf8');
-const rules = await readFile(path.join(root, 'resources/global-app-analysis/references/rules.md'), 'utf8');
-const guide = await readFile(path.join(root, 'resources/global-app-analysis/references/guide.md'), 'utf8');
-const download = await readFile(path.join(root, 'resources/global-app-analysis/references/download-workflow.md'), 'utf8');
+const rules = await readFile(path.join(references, 'rules.md'), 'utf8');
+const completion = await readFile(path.join(references, 'completion.md'), 'utf8');
 
 function slug(heading) {
   return heading.trim().toLowerCase()
@@ -55,28 +55,40 @@ test('local Markdown links resolve and anchors exist', async () => {
   }
 });
 
-test('the entry gates and the detailed checklist cover the same critical steps', () => {
-  for (const token of ['mustRead', 'preflight', 'check_delivery.py init', 'verify', 'check-ledger',
-    'completion.md', 'reserve', 'search-round', '至少两轮', '--partial', 'review', 'deliver']) {
+test('entry gates and the detailed checklist agree on the process', () => {
+  for (const token of ['mustRead', 'preflight', 'verify', 'completion.md', '审查', '10.4', '重新读取']) {
     assert.ok(skill.includes(token), `SKILL.md is missing gate: ${token}`);
     assert.ok(rules.includes(token), `rules.md is missing gate: ${token}`);
   }
 });
 
-test('the task directory is created before either ledger is initialized', () => {
-  assert.ok(download.includes('mkdir -p "$TASK_DIR"'));
-  assert.ok(download.indexOf('mkdir -p "$TASK_DIR"') < download.indexOf('check_delivery.py" init'));
-  assert.ok(rules.includes('mkdir -p'));
-  assert.match(guide, /check_delivery\.py init/);
-  assert.match(guide, /attempts\.py init/);
-});
-
 test('every file named in the entry gate table exists in the resource snapshot', async () => {
   const table = skill.split('## 强制门槛')[1].split('## 不可协商')[0];
   for (const match of table.matchAll(/`([a-z-]+\.md)(?:#[^`]*)?`/g)) {
-    const filename = path.join(root, 'resources/global-app-analysis/references', match[1]);
+    const filename = path.join(references, match[1]);
     await access(filename).catch(() => {
       throw new Error(`SKILL.md gate table names a missing file: ${match[1]}`);
     });
+  }
+});
+
+test('completion requires reading the current file, not a delivery receipt', () => {
+  assert.match(completion, /10\.4/);
+  assert.match(completion, /不是完成信号/);
+  assert.match(completion, /重新读取/);
+  assert.match(skill, /不是完成信号/);
+  assert.match(skill, /重新读取/);
+});
+
+test('the skill no longer depends on review/delivery checker artifacts', async () => {
+  const files = [
+    skill,
+    ...await markdownFiles(path.join(root, 'resources/global-app-analysis')),
+  ];
+  for (const file of files) {
+    const text = typeof file === 'string' ? file : await readFile(file, 'utf8');
+    for (const token of ['check_delivery', 'delivery-record', 'review-record', 'task-checks', '--partial']) {
+      assert.ok(!text.includes(token), `${path.relative(root, file)} still mentions ${token}`);
+    }
   }
 });

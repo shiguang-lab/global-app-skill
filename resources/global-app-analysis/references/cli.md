@@ -19,7 +19,7 @@ CLI run long_screenshot --mode ued --resource-root RESOURCE_ROOT -- --help
 
 可执行脚本：`preflight`、`download`、`export_device`、`verify`、`attempts`、`inspect_package`、`long_screenshot`。`apk_utils` 和 `progress` 是内部依赖。参数在 `--` 后原样传给 Python，先查相应脚本的 `--help`。CLI 保留当前工作目录、脚本 stdout/stderr 和退出码（包括设备门槛的退出码 4）；显式传 `--mode download` 使用 `/4`，业务/UED 使用 `/10`。
 
-文档里的 `python3 scripts/NAME.py 参数` 只是参数示例的简写，**执行时优先展开为** `CLI run NAME --mode MODE --resource-root RESOURCE_ROOT -- 参数`。也可以在当前目录已经是 `$RESOURCE_ROOT` 时直接运行 `python3 scripts/...`；此时业务/UED 必须自行设置 `APP_RESEARCH_TOTAL_STAGES=10`，否则前四步进度会按 `/4` 输出。两种方式不要在同一任务里混用。[审查与交付校验](delivery-record.md)的 `check_delivery.py` 是例外，直接在 `$RESOURCE_ROOT/scripts/` 下运行。示例中的 `scripts/`、`references/` 和 `examples/` 均相对于资源快照。
+文档里的 `python3 scripts/NAME.py 参数` 只是参数示例的简写，**执行时优先展开为** `CLI run NAME --mode MODE --resource-root RESOURCE_ROOT -- 参数`。也可以在当前目录已经是 `$RESOURCE_ROOT` 时直接运行 `python3 scripts/...`；此时业务/UED 必须自行设置 `APP_RESEARCH_TOTAL_STAGES=10`，否则前四步进度会按 `/4` 输出。两种方式不要在同一任务里混用。审查/交付不需要额外的校验脚本；按 `review-workflow.md` 和 `report-review-workflow.md` 的流程执行。示例中的 `scripts/`、`references/` 和 `examples/` 均相对于资源快照。
 
 省略 `--resource-root` 时，`run` 会先 resolve 当前模式并验证资源；任务中应显式传入已读快照，避免版本变化。缓存损坏时 `run` 直接失败，重新 resolve 可下载修复；旧快照保留以便正在执行的任务继续使用。
 
