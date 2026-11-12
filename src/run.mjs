@@ -8,7 +8,7 @@ export async function runScript(script, args, options = {}) {
   if (!SCRIPTS.includes(script)) throw new Error(`Unknown script; choose ${SCRIPTS.join(', ')}`);
   const resourceRoot = options.resourceRoot ? path.resolve(options.resourceRoot) : (await resolveContext(options)).resourceRoot;
   // A task that already resolved an earlier snapshot may finish on it.
-  await readSnapshot(resourceRoot, { requireRules: !options.resourceRoot });
+  await readSnapshot(resourceRoot, { requireReviewWorkflow: !options.resourceRoot });
   await promisify(execFile)('python3', ['-c', 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)'])
     .catch(() => { throw new Error('Python >=3.9 must be available as python3'); });
   return new Promise((resolve, reject) => {

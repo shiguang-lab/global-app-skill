@@ -4,6 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { identity, sha256, SKILL_NAME, validateManifest, VERSION } from '../src/protocol.mjs';
 
+// Keep this permissive: a resources-v* tag may be published without a matching
+// npm release. New CLI-only validation must not block an in-flight older task.
+const MIN_CLI_VERSION = '0.1.3';
+
 export async function buildResources(source, output, { check = false, releaseTag = `v${VERSION}` } = {}) {
   const entries = [];
   async function walk(directory) {
@@ -22,7 +26,7 @@ export async function buildResources(source, output, { check = false, releaseTag
   const resourceHash = identity(files);
   const payload = Buffer.from(JSON.stringify({ files: entries.map(file => ({ path: file.path, content: file.bytes.toString('base64') })) }));
   const bundle = gzipSync(payload, { level: 9 });
-  const manifest = validateManifest({ schemaVersion: 1, releaseTag, minCliVersion: '0.1.3', resourceHash,
+  const manifest = validateManifest({ schemaVersion: 1, releaseTag, minCliVersion: MIN_CLI_VERSION, resourceHash,
     bundle: `${resourceHash}.json.gz`, sha256: sha256(bundle), size: bundle.length, files });
   const manifestText = JSON.stringify(manifest, null, 2) + '\n';
   if (check) {

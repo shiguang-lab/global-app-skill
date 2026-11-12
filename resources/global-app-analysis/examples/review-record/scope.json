@@ -1,0 +1,16 @@
+{
+  "h5_in_scope": true,
+  "h5_evidence": "analysis/h5-scope.md#L1",
+  "review_items": {
+    "business": {
+      "apply": "借款申请入口、条件与下一跳",
+      "repay": "还款入口与结果"
+    },
+    "pages": {
+      "home": "首页及其可见状态"
+    },
+    "h5": {
+      "withdraw": "H5 项目中的提现路由"
+    }
+  }
+}

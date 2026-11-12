@@ -59,7 +59,7 @@ def check_snapshot(root, snapshot, label):
 def load_scope(root, name):
     scope = json.loads((root / name).read_text(encoding="utf-8"))
     require(type(scope["h5_in_scope"]) is bool, "scope must explicitly record whether H5 is in scope")
-    return scope["h5_in_scope"], evidence_path(root, scope["h5_evidence"], "H5 scope")
+    return scope, evidence_path(root, scope["h5_evidence"], "H5 scope")
 
 
 def revision(root, files, scope, scope_evidence):
@@ -76,6 +76,31 @@ def review_surfaces(record, h5_in_scope):
     return base | {"h5"} if h5_in_scope else base
 
 
+def review_plan(record, scope):
+    surfaces = review_surfaces(record, scope["h5_in_scope"])
+    items = scope.get("review_items")
+    require(isinstance(items, dict) and items.keys() == surfaces,
+            "scope.review_items must list every applicable review area")
+    for area, entries in items.items():
+        require(isinstance(entries, dict) and entries and
+                all(re.fullmatch(r"[\w.-]+", key) and present(value) for key, value in entries.items()),
+                f"{area}: list required item IDs and descriptions in scope.review_items")
+    return items
+
+
+def check_item_results(items, results):
+    for area, planned in items.items():
+        result = results[area]
+        entries = result.get("items")
+        require(isinstance(entries, dict) and entries.keys() == planned.keys(),
+                f"{area}: record exactly the planned review item IDs")
+        statuses = {item["status"] for item in entries.values()}
+        require(statuses <= {"passed", "needs_work", "blocked"},
+                f"{area}: invalid review item status")
+        require((result["status"] == "passed") == (statuses == {"passed"}),
+                f"{area}: the area verdict must reflect its item results")
+
+
 def check_retry_state(root, ledger, user_requested=False):
     require(not ledger.pending, "record the result of every reserved retry before delivery")
     require(not ledger.waiting or user_requested, "wait for the user's decision on: " + ", ".join(sorted(ledger.waiting)))
@@ -84,8 +109,7 @@ def check_retry_state(root, ledger, user_requested=False):
             check_snapshot(root, event["evidence"], f"checkpoint {event['id']}")
 
 
-def check_review(root, ledger, record, current, h5_in_scope, partial):
-    required = review_surfaces(record, h5_in_scope)
+def check_review(root, ledger, record, current, items, partial):
     rounds = ledger.rounds
     require(ledger.active is None, "finish the open review before delivery")
     check_retry_state(root, ledger, partial and record.get("partial", {}).get("reason") == "user_request")
@@ -97,9 +121,12 @@ def check_review(root, ledger, record, current, h5_in_scope, partial):
             check_snapshot(root, result["evidence"], f"round {start['id']}, {area}")
     latest_start, latest = rounds[-1]
     require(latest_start["revision"] == current, "current facts require a new review from 9.1")
-    require(set(latest["results"]) == required, "review must cover every area for the current scope")
-    require(sum(required <= wave["results"].keys() for _, wave in rounds) >= 2,
-            "complete two separate rounds covering every area for the current scope")
+    require(latest_start.get("items") == items and latest["results"].keys() == items.keys(),
+            "review must cover every area and item for the current scope")
+    check_item_results(items, latest["results"])
+    require(sum(all(planned.keys() <= wave["results"].get(area, {}).get("items", {}).keys()
+                    for area, planned in items.items()) for _, wave in rounds) >= 2,
+            "complete two separate rounds covering every area and item for the current scope")
 
     unresolved = {key: item for key, item in record["issues"].items() if item["status"] != "closed"}
     for issue_id, issue in record["issues"].items():
@@ -107,9 +134,29 @@ def check_review(root, ledger, record, current, h5_in_scope, partial):
         evidence_path(root, issue["evidence"], issue_id)
         if issue["status"] == "blocked":
             check_blocker(root, ledger, issue_id, issue)
+    approved = set()
+    reviewed_issues = set()
+    for area, result in latest["results"].items():
+        for item_id, item in result["items"].items():
+            label = f"{area}/{item_id}"
+            check_snapshot(root, item["evidence"], label)
+            if item["status"] == "passed":
+                approved.add(label)
+                continue
+            issue_id = item.get("issue")
+            require(issue_id in unresolved, f"{label}: link unfinished work to an unresolved issue")
+            reviewed_issues.add(issue_id)
+            issue = unresolved[issue_id]
+            require((item["status"] == "blocked") == (issue["status"] == "blocked"),
+                    f"{label}: item and issue disagree about whether work is blocked")
+            if item["status"] == "blocked":
+                require(item["blocker"] == issue, f"{label}: blocker changed after review")
+                for confirmation in item["unavailable_paths"].values():
+                    check_snapshot(root, confirmation["evidence"], label)
+    require(reviewed_issues == unresolved.keys(), "re-review every unresolved issue before delivery")
     if partial:
         permission = record["partial"]
-        require(unresolved, "record the verified subset and remaining gaps")
+        require(approved and unresolved, "record passed items and remaining gaps")
         evidence_path(root, permission["included"], "verified subset")
         require(all(result["status"] in {"passed", "partial_passed"} for result in latest["results"].values()),
                 "the latest review must approve the verified subset in every area")
@@ -157,18 +204,44 @@ def check_blocker(root, ledger, issue_id, issue):
         refs.add(ref)
 
 
-def finish_review(root, ledger, args, current):
+def seal_item(root, record, label, item):
+    require(present(item.get("assessment")), f"{label}: record the review finding or why prior evidence still applies")
+    sealed = {**item, "evidence": evidence_snapshot(root, item["evidence"], label)}
+    if item["status"] != "blocked":
+        return sealed
+    issue = record["issues"].get(item.get("issue"))
+    require(issue and issue["status"] == "blocked", f"{label}: reference the blocked issue reviewed")
+    paths = {name: path for name, path in issue["paths"].items() if path["status"] == "unavailable"}
+    confirmations = item.get("unavailable_paths", {})
+    require(isinstance(confirmations, dict) and confirmations.keys() == paths.keys(),
+            f"{label}: reviewer must verify every unavailable path")
+    verified = {}
+    for name, path in paths.items():
+        confirmation = confirmations[name]
+        require(present(confirmation.get("prerequisite")) and present(confirmation.get("observation"))
+                and confirmation.get("evidence") == path["evidence"],
+                f"{label}/{name}: record the checked prerequisite, observed limit and matching evidence")
+        verified[name] = {**confirmation,
+                          "evidence": evidence_snapshot(root, path["evidence"], f"{label}/{name}")}
+    return {**sealed, "blocker": issue, "unavailable_paths": verified}
+
+
+def finish_review(root, ledger, args, current, record):
     start = ledger.active
     require(start and start["id"] == args.id, "review ID is not open")
     require(start["revision"] == current, "facts changed during review; cancel it and start a new round")
     results = json.loads((root / args.results).read_text(encoding="utf-8"))
     require(results.keys() == set(start["surfaces"]), "a completed round must include every planned area")
+    require("items" in start, "restart review from 9.1 with a review item plan")
+    check_item_results(start["items"], results)
     for area, result in results.items():
         require(result["method"] in {"isolated", "in_session"}
                 and result["status"] in {"passed", "needs_work", "partial_passed"},
                 f"{area}: review area needs a method and verdict")
         evidence = evidence_snapshot(root, result["evidence"], area, after=start["at_ns"])
-        results[area] = {**result, "evidence": evidence}
+        entries = {key: seal_item(root, record, f"{area}/{key}", item)
+                   for key, item in result["items"].items()}
+        results[area] = {**result, "evidence": evidence, "items": entries}
     return ledger.add("finish-review", ref_id=args.id, results=results)
 
 
@@ -207,11 +280,12 @@ def main():
         phase = args.phase
         if phase in {"revision", "begin-review", "finish-review", "review", "deliver"}:
             record = json.loads(args.record.read_text(encoding="utf-8"))
-            h5_in_scope, scope_evidence = load_scope(root, record["scope"])
+            scope, scope_evidence = load_scope(root, record["scope"])
             current = revision(root, record["facts"], record["scope"], scope_evidence)
             if phase == "revision":
                 print(current)
                 return
+            items = review_plan(record, scope)
         waiting = []
         with open_ledger(root, initialize=phase == "init",
                          write=phase not in {"check-ledger", "review", "deliver"}) as ledger:
@@ -239,10 +313,11 @@ def main():
                 proof = evidence_snapshot(root, args.evidence, "user approval", after=wait)
                 ledger.add("resume", key=key, evidence=proof)
             elif phase == "begin-review":
-                event = ledger.add("begin-review", revision=current, surfaces=sorted(review_surfaces(record, h5_in_scope)))
-                print(json.dumps({"id": event["id"], "revision": current, "surfaces": event["surfaces"]}))
+                event = ledger.add("begin-review", revision=current, surfaces=sorted(items), items=items)
+                print(json.dumps({"id": event["id"], "revision": current, "surfaces": event["surfaces"],
+                                  "items": items}, ensure_ascii=False))
             elif phase == "finish-review":
-                print(f"review checkpoint {finish_review(root, ledger, args, current)['id']} sealed")
+                print(f"review checkpoint {finish_review(root, ledger, args, current, record)['id']} sealed")
             elif phase == "cancel-review":
                 proof = evidence_snapshot(root, args.evidence, "review cancellation")
                 ledger.add("cancel-review", ref_id=args.id, evidence=proof)
@@ -250,7 +325,7 @@ def main():
                 check_retry_state(root, ledger)
                 print("check-ledger passed")
             else:
-                check_review(root, ledger, record, current, h5_in_scope, args.partial)
+                check_review(root, ledger, record, current, items, args.partial)
                 if phase == "deliver":
                     check_artifacts(root, record, current, args.partial)
                 print(f"{phase} passed ({'partial' if args.partial else 'formal'})")

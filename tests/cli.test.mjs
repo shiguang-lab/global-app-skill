@@ -49,8 +49,9 @@ test('fresh installation contains only a thin SKILL.md and is repeatable', async
   const result = await installSkill(target);
   assert.deepEqual(await readdir(target), ['SKILL.md']);
   const entry = await readFile(result.skillPath, 'utf8');
-  assert.ok(entry.split('\n').length < 27);
-  assert.match(entry, /## 必检入口[\s\S]*references\/rules\.md/);
+  assert.ok(entry.split('\n').length < 60);
+  assert.match(entry, /## 强制门槛[\s\S]*references\/rules\.md/);
+  assert.match(entry, /mustRead/);
   await Promise.all(Array.from({ length: 4 }, () => installSkill(target)));
   assert.deepEqual(await readdir(target), ['SKILL.md']);
   await symlink(target, path.join(root, 'linked'));
@@ -64,7 +65,8 @@ test('CLI resolves workflow files and reuses a verified cached bundle', async t 
   assert.equal(first.mode, 'ued');
   assert.equal(first.updated, true);
   assert.match(stderr, /snapshot ready/);
-  assert.equal(first.mustRead[0], path.join(first.resourceRoot, 'references/rules.md'));
+  assert.equal(first.mustRead[0], path.join(first.resourceRoot, 'references/cli.md'));
+  assert.equal(first.mustRead.at(-1), path.join(first.resourceRoot, 'references/rules.md'));
   assert.ok(first.mustRead.some(name => name.endsWith('/ued-workflow.md')));
   for (const filename of first.mustRead) assert.ok((await lstat(filename)).isFile());
   assert.equal((await resolveContext(f.options)).updated, false);
@@ -86,7 +88,9 @@ test('resolver rejects a manifest missing the required rules file', async t => {
 test('an in-flight task can still run against its pinned pre-rules snapshot', async t => {
   const f = await fixture(t);
   const files = f.manifest.files.filter(file =>
-    !['references/rules.md', 'references/delivery-record.md', 'scripts/check_delivery.py'].includes(file.path));
+    !['references/rules.md', 'references/delivery-record.md', 'scripts/check_delivery.py',
+      'examples/review-record/README.md', 'examples/review-record/review.json',
+      'examples/review-record/scope.json', 'examples/review-record/results.json'].includes(file.path));
   const resourceHash = identity(files);
   const snapshot = path.join(f.directory, resourceHash);
   await cp(f.source, snapshot, { recursive: true });
@@ -110,8 +114,10 @@ test('feed updates dynamic rules independently and keeps the old task snapshot',
   const second = await resolveContext(f.options);
   assert.notEqual(first.resourceRoot, second.resourceRoot);
   assert.equal(second.resourceHash, secondManifest.resourceHash);
-  assert.match(await readFile(second.mustRead[0], 'utf8'), /Updated fixture rules/);
-  assert.doesNotMatch(await readFile(first.mustRead[0], 'utf8'), /Updated fixture rules/);
+  const secondMustRead = second.mustRead.find(name => name.endsWith('/rules.md'));
+  const firstMustRead = first.mustRead.find(name => name.endsWith('/rules.md'));
+  assert.match(await readFile(secondMustRead, 'utf8'), /Updated fixture rules/);
+  assert.doesNotMatch(await readFile(firstMustRead, 'utf8'), /Updated fixture rules/);
   await readSnapshot(first.resourceRoot);
 });
 

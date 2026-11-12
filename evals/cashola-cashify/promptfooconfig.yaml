@@ -1,0 +1,28 @@
+description: Cashola/Cashify delivery regressions
+prompts:
+  - file://original-task.txt
+providers:
+  - id: openai:codex-app-server
+    config:
+      working_dir: ../../dist/evals/cashola-cashify/workspace
+      skip_git_repo_check: true
+      sandbox_mode: danger-full-access
+      network_access_enabled: true
+      approval_policy: never
+      include_raw_events: true
+      turn_timeout_ms: 1800000
+      cli_config:
+        features:
+          multi_agent: true
+tests:
+  - description: Original request in a fresh workspace
+    assert:
+      - type: javascript
+        metric: evidence-review-before-delivery
+        value: file://assertions.cjs:firstReview
+      - type: javascript
+        metric: re-review-after-correction
+        value: file://assertions.cjs:afterCorrection
+      - type: javascript
+        metric: login-blocker-before-delivery
+        value: file://assertions.cjs:loginBlocker

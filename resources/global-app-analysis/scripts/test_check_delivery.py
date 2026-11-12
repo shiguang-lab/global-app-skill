@@ -36,7 +36,13 @@ class DeliveryGateTests(unittest.TestCase):
         self.run_gate("init").check_returncode()
 
     def set_h5(self, enabled):
-        (self.root / "scope.json").write_text(json.dumps({"h5_in_scope": enabled, "h5_evidence": "scope.md#L1"}))
+        items = {"business": {"credit": "Submit a credit application", "login": "Continue after sign-in"},
+                 "pages": {"home": "Inspect the home page"}}
+        if enabled:
+            items["h5"] = {"withdraw": "Submit the loan from the H5 form"}
+        (self.root / "scope.json").write_text(json.dumps({
+            "h5_in_scope": enabled, "h5_evidence": "scope.md#L1", "review_items": items,
+        }))
 
     def current_revision(self):
         return revision(self.root, [self.facts.name], "scope.json", "scope.md")
@@ -50,23 +56,31 @@ class DeliveryGateTests(unittest.TestCase):
     def begin(self):
         return json.loads(self.run_gate("begin-review").stdout)
 
-    def write_results(self, wave, statuses=None, evidence=None):
+    def write_results(self, wave, evidence=None, blocked=None):
         name = f"review-{wave['id']}.md"
         if evidence is None:
             (self.root / name).write_text(f"Review {wave['id']}\nBusiness\nPages\nH5\n")
             evidence = f"{name}#L2"
         results = {
-            area: {"method": "in_session", "status": (statuses or {}).get(area, "passed"), "evidence": evidence}
+            area: {"method": "in_session", "status": "passed", "evidence": evidence,
+                   "items": {key: {"status": "passed", "assessment": "Prior evidence covers the current item.",
+                                   "evidence": "runtime.md#L1"} for key in wave["items"][area]}}
             for area in wave["surfaces"]
         }
+        if blocked is not None:
+            results["business"]["status"] = "partial_passed"
+            results["business"]["items"]["login"] = {
+                "status": "blocked", "assessment": "The post-login path lacks a required test input.",
+                "evidence": "runtime.md#L1", "issue": "login", "unavailable_paths": blocked,
+            }
         (self.root / "results.json").write_text(json.dumps(results))
 
     def finish_review(self, wave):
         return self.run_gate("finish-review", "--id", str(wave["id"]), "--results", "results.json")
 
-    def seal(self, statuses=None):
+    def seal(self, *, blocked=None):
         wave = self.begin()
-        self.write_results(wave, statuses)
+        self.write_results(wave, blocked=blocked)
         self.finish_review(wave).check_returncode()
         return wave
 
@@ -117,6 +131,17 @@ class DeliveryGateTests(unittest.TestCase):
         self.seal()
         self.assertEqual(self.run_gate("review").returncode, 0)
 
+    def test_new_item_in_existing_area_also_requires_two_rounds(self):
+        self.seal()
+        scope = self.root / "scope.json"
+        content = json.loads(scope.read_text())
+        content["review_items"]["business"]["retry"] = "Retry when the offer fails to load"
+        scope.write_text(json.dumps(content))
+        self.seal()
+        self.assertIn("covering every area and item", self.run_gate("review").stderr)
+        self.seal()
+        self.assertEqual(self.run_gate("review").returncode, 0)
+
     def test_corrected_flow_requires_a_new_round_and_delivery_checks(self):
         self.seal()
         self.seal()
@@ -127,6 +152,21 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertIn("delivery checks must refer to the current facts", self.run_gate("deliver").stderr)
         self.record["delivery"]["revision"] = self.current_revision()
         self.assertEqual(self.run_gate("deliver").returncode, 0)
+
+    def test_corrected_round_cannot_omit_unchanged_items(self):
+        self.seal()
+        self.facts.write_text("flowchart TD\nA --> C\n")
+        wave = self.begin()
+        self.write_results(wave)
+        path = self.root / "results.json"
+        results = json.loads(path.read_text())
+        del results["business"]["items"]["login"]
+        path.write_text(json.dumps(results))
+        self.assertIn("exactly the planned review item IDs", self.finish_review(wave).stderr)
+        self.assertIn("finish the open review", self.run_gate("review").stderr)
+        self.write_results(wave)
+        self.finish_review(wave).check_returncode()
+        self.assertEqual(self.run_gate("review").returncode, 0)
 
     def test_exhausted_batch_waits_and_each_new_batch_needs_approval(self):
         key = "technical:loan"
@@ -149,7 +189,6 @@ class DeliveryGateTests(unittest.TestCase):
 
     def test_blocker_requires_distinct_original_and_isolated_host_proof(self):
         self.seal()
-        self.seal({"business": "partial_passed"})
         issue = {
             "status": "blocked", "evidence": "runtime.md#L1", "kind": "app_host", "layer": "native",
             "resume": "Provide a test account.",
@@ -158,16 +197,55 @@ class DeliveryGateTests(unittest.TestCase):
         }
         self.record["issues"]["login"] = issue
         self.record["partial"] = {"reason": "blocked", "included": "scope.md#L2"}
+        proof = {"original_host": {"prerequisite": "An App test session or a supported test input",
+                                   "observation": "The original host stops at the phone screen.",
+                                   "evidence": "runtime.md#L2"}}
+        self.seal(blocked=proof)
         self.assertIn("original host and an isolated App host", self.run_gate("review", "--partial").stderr)
         issue["paths"]["isolated_host"] = {"status": "attempted", "key": "technical:login", "attempt": 42}
         self.assertIn("completed failed attempt", self.run_gate("review", "--partial").stderr)
         issue["paths"]["isolated_host"]["attempt"] = self.retry("technical:login", path="isolated_host")
+        self.assertIn("blocker changed after review", self.run_gate("review", "--partial").stderr)
+        self.seal(blocked=proof)
         self.assertEqual(self.run_gate("review", "--partial").returncode, 0)
         self.assertIn("selected delivery type", self.run_gate("deliver", "--partial").stderr)
         self.record["delivery"]["partial"] = True
         self.assertEqual(self.run_gate("deliver", "--partial").returncode, 0)
         self.retry("technical:login", outcome="passed", path="isolated_host")
         self.assertIn("latest completed failed attempt", self.run_gate("deliver", "--partial").stderr)
+
+    def test_unavailable_paths_require_item_level_review_of_prerequisites(self):
+        self.seal()
+        self.record["issues"]["login"] = {
+            "status": "blocked", "evidence": "runtime.md#L1", "kind": "app_host", "layer": "native",
+            "resume": "Provide an authorized test session.",
+            "paths": {
+                "original_host": {"status": "unavailable", "reason": "No authorized test session",
+                                  "evidence": "runtime.md#L2"},
+                "isolated_host": {"status": "unavailable", "reason": "Missing isolated test configuration",
+                                  "evidence": "isolated.md"},
+            },
+        }
+        isolated = self.root / "isolated.md"
+        isolated.write_text("The test build's config loader reports missing fixture source.\n")
+        self.record["partial"] = {"reason": "blocked", "included": "scope.md#L2"}
+        wave = self.begin()
+        proof = {"original_host": {"prerequisite": "Authorized test session",
+                                   "observation": "The App has no test session and requires a phone sign-in.",
+                                   "evidence": "runtime.md#L2"}}
+        self.write_results(wave, blocked=proof)
+        self.assertIn("reviewer must verify every unavailable path", self.finish_review(wave).stderr)
+        proof["isolated_host"] = {"prerequisite": "Configured isolated fixture source",
+                                  "observation": "The test build reports that no fixture source is configured.",
+                                  "evidence": "runtime.md#L2"}
+        self.write_results(wave, blocked=proof)
+        self.assertIn("matching evidence", self.finish_review(wave).stderr)
+        proof["isolated_host"]["evidence"] = "isolated.md"
+        self.write_results(wave, blocked=proof)
+        self.finish_review(wave).check_returncode()
+        self.assertEqual(self.run_gate("review", "--partial").returncode, 0)
+        isolated.write_text("Replaced after the review.\n")
+        self.assertIn("checkpoint evidence changed", self.run_gate("review", "--partial").stderr)
 
     def test_open_retry_and_changed_evidence_stop_delivery(self):
         self.seal()
@@ -203,6 +281,26 @@ class DeliveryGateTests(unittest.TestCase):
         self.assertIn("deliver refused", self.run_gate("deliver").stderr)
         self.record["delivery"] = delivery
         self.assertEqual(self.run_gate("deliver").returncode, 0)
+
+    def test_check_ledger_needs_no_review_record(self):
+        record = self.root / "not-created.json"
+        result = subprocess.run([sys.executable, str(Path(__file__).with_name("check_delivery.py")),
+                                 "check-ledger", str(record)], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("check-ledger passed", result.stdout)
+
+    def test_review_record_examples_are_consistent(self):
+        example = Path(__file__).resolve().parent.parent / "examples/review-record"
+        record = json.loads((example / "review.json").read_text(encoding="utf-8"))
+        mixed = json.loads((example / "review-mixed.json").read_text(encoding="utf-8"))
+        scope = json.loads((example / "scope.json").read_text(encoding="utf-8"))
+        results = json.loads((example / "results.json").read_text(encoding="utf-8"))
+        self.assertEqual(set(record), {"targets", "facts", "scope", "issues", "delivery"})
+        self.assertEqual(set(mixed["targets"]), {"research", "ued"})
+        self.assertEqual({item["target"] for item in mixed["delivery"]["artifacts"]}, {"research", "ued"})
+        self.assertEqual(set(scope["review_items"]), set(results))
+        for area, items in scope["review_items"].items():
+            self.assertEqual(set(results[area]["items"]), set(items))
 
 
 if __name__ == "__main__":

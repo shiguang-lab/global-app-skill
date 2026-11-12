@@ -85,11 +85,13 @@ flowchart TD
         needsBusiness -->|"仅 UED"| reviewStart
         reviewStart --> reviewRun
         reviewRun -->|"发现缺口"| reviewFix
-        reviewFix -->|"回第 5–8 步补证"| recover
+        reviewFix -->|"缺实现/入口：回第 5–6 步"| recover
+        reviewFix -->|"缺交互/图片：回第 7–8 步"| prepare
         reviewFix -->|"仅需修正草稿"| reviewRestart
-        reviewRun -->|"首审无缺口"| reviewRestart
+        reviewRun -->|"本轮无缺口"| reReview{"至少两轮且当前版本通过？"}
+        reReview -->|"否：从 9.1 再审一轮"| reviewRestart
+        reReview -->|"是：9.5 校验"| reviewGate
         reviewRestart --> reviewStart
-        reviewRun -->|"当前版本的复审通过"| reviewGate
         reviewFix -->|"真实阻塞或用户要求先看"| checkpoint
     end
 
@@ -142,4 +144,4 @@ flowchart TD
 
 ## 操作文档入口
 
-任务分支见 [下载子工作流](download-workflow.md)、[业务调研工作流](research-workflow.md) 和 [UED 工作流](ued-workflow.md)。第 4 步必读 [校验与交付](verification.md)，两个完整分支第 5 步前必读 [调研闭环与完成条件](completion.md)。共用操作见 [包体与代码恢复](package-analysis.md)、[运行与 Mock](runtime-and-mock.md)、[页面发现与图片提取](ui-extraction.md) 和 [截图与长图操作](screenshot-workflow.md)。业务报告成品按 [报告审查工作流](report-review-workflow.md) 验收。
+任务分支见 [下载子工作流](download-workflow.md)、[业务调研工作流](research-workflow.md) 和 [UED 工作流](ued-workflow.md)。第 4 步必读 [校验与交付](verification.md)，两个完整分支第 5 步前必读 [调研闭环与完成条件](completion.md)。共用操作见 [包体与代码恢复](package-analysis.md)、[运行与 Mock](runtime-and-mock.md)、[页面发现与图片提取](ui-extraction.md) 和 [截图与长图操作](screenshot-workflow.md)。业务报告成品按 [报告审查工作流](report-review-workflow.md) 验收；审查记录模板见 [审查与交付记录示例](../examples/review-record/README.md)。

@@ -22,7 +22,7 @@ export function validateMode(mode) {
   return mode;
 }
 
-export function validateManifest(manifest, { requireRules = true } = {}) {
+export function validateManifest(manifest, { requireReviewWorkflow = true } = {}) {
   const hash = /^[a-f0-9]{64}$/;
   if (manifest?.schemaVersion !== 1 || !RELEASE_TAG.test(manifest.releaseTag) || !hash.test(manifest.resourceHash) ||
       !/^\d+\.\d+\.\d+$/.test(manifest.minCliVersion) ||
@@ -44,8 +44,20 @@ export function validateManifest(manifest, { requireRules = true } = {}) {
   }
   if (identity(manifest.files) !== manifest.resourceHash) throw new Error('Resource manifest hash mismatch');
   const required = ['references/guide.md', 'references/cli.md', 'references/orchestration.md',
+    'references/completion.md', 'references/ui-extraction.md', 'references/screenshot-workflow.md',
+    'references/review-workflow.md', 'references/review-checklist.md', 'references/loop-budget.md',
+    'references/business-ui-report.md', 'references/report-review-workflow.md',
+    'references/package-analysis.md', 'references/runtime-and-mock.md',
+    'references/network-and-devices.md', 'references/download-sources.md', 'references/verification.md',
+    'examples/business-results-report/README.md', 'examples/business-results-report/report.html',
+    'examples/business-results-report/main-flow.mmd',
     ...Object.values(MODES), ...SCRIPTS.map(name => `scripts/${name}.py`), 'scripts/apk_utils.py', 'scripts/progress.py'];
-  if (requireRules) required.unshift(RULES_PATH, 'references/delivery-record.md', 'scripts/check_delivery.py');
+  // These files were introduced with the review ledger. A task pinned to an
+  // older snapshot may still finish on it, so only fresh resolutions require them.
+  if (requireReviewWorkflow) required.unshift(RULES_PATH, 'references/delivery-record.md', 'scripts/check_delivery.py',
+    'examples/review-record/README.md', 'examples/review-record/review.json',
+    'examples/review-record/review-mixed.json', 'examples/review-record/scope.json',
+    'examples/review-record/results.json');
   const missing = required.filter(name => !seen.has(name));
   if (missing.length) throw new Error(`Resource manifest is missing workflow files: ${missing.join(', ')}`);
   const installed = VERSION.split('.').map(Number);

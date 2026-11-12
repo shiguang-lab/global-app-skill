@@ -1,0 +1,31 @@
+{
+  "targets": ["research", "ued"],
+  "facts": ["analysis/facts.md", "analysis/flow.mmd", "analysis/pages.json"],
+  "scope": "scope.json",
+  "issues": {},
+  "delivery": {
+    "revision": "REPLACE_WITH_CHECK_DELIVERY_REVISION_OUTPUT",
+    "partial": false,
+    "artifacts": [
+      {
+        "target": "research",
+        "path": "report.html",
+        "sha256": "REPLACE_WITH_FINAL_REPORT_SHA256",
+        "checks": {
+          "10.1": "checks/10.1-format.md#L1",
+          "10.2": "checks/10.2-structure.md#L1",
+          "10.3": "checks/10.3-content.md#L1",
+          "10.4": "checks/10.4-ui.md#L1"
+        }
+      },
+      {
+        "target": "ued",
+        "path": "ui/index.html",
+        "sha256": "REPLACE_WITH_FINAL_ALBUM_SHA256",
+        "checks": {
+          "album": "checks/album.md#L1"
+        }
+      }
+    ]
+  }
+}

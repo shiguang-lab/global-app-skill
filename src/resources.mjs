@@ -107,7 +107,7 @@ export async function resolveContext({ mode, feed = FEED, cacheDir, progress = (
   }
   await readSnapshot(resourceRoot);
   progress(updated ? 'Resource snapshot ready' : 'Verified cached snapshot is current');
-  const mustRead = [RULES_PATH, 'references/cli.md', 'references/guide.md', 'references/orchestration.md', MODES[mode]]
+  const mustRead = ['references/cli.md', 'references/guide.md', 'references/orchestration.md', MODES[mode], RULES_PATH]
     .map(name => path.join(resourceRoot, name));
   return { ok: true, source: url.origin === 'https://github.com' ? 'github' : 'custom', feed: url.href,
     mode, releaseTag: manifest.releaseTag, resourceHash: manifest.resourceHash, resourceRoot,

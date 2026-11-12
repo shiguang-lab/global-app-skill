@@ -46,7 +46,7 @@ npx -y --prefer-online global-app-skill@latest run preflight --mode research --r
 | `src/` | npm CLI：安装、资源解析、校验、脚本运行 |
 | `resources/global-app-analysis/references/` | 主流程和各阶段操作文档 |
 | `resources/global-app-analysis/scripts/` | 原有 Python 脚本及回归测试 |
-| `resources/global-app-analysis/examples/` | 业务报告模板 |
+| `resources/global-app-analysis/examples/` | 业务报告模板与审查记录模板 |
 | `scripts/build-resources.mjs` | 生成确定性的资源包与清单 |
 | `.github/workflows/publish.yml` | tag 触发的构建、GitHub Release 和 npm 发布 |
 | `scripts/release.mjs` | tag 校验、打包、校验和及发布资产核对 |
@@ -68,13 +68,15 @@ npm run release:prepare
 
 Python 回归测试中的长图部分需要 Pillow。CLI 无第三方 Node 依赖。`--feed` 可指定 HTTPS 清单，测试允许 loopback HTTP。`release:prepare` 在本地预演与 Actions 相同的构建，默认 tag 为 `v<package.json.version>`，也可指定 `RELEASE_TAG`。构建结果进入忽略的 `dist/release/`，不手工上传。
 
+`npm run resources:check` 只校验已生成的 `dist/resources`，本地需先执行 `npm run resources:build`；`release:prepare` 会自动重建并核对。
+
 ### 发布 CLI、薄入口与资源
 
-修改源码并更新 `package.json` 的版本，提交、push 后创建对应版本的 tag。例如版本为 `0.1.3` 时：
+修改源码并更新 `package.json` 的版本，提交、push 后创建对应版本的 tag。例如版本为 `0.1.8` 时：
 
 ```sh
-git tag v0.1.3
-git push origin v0.1.3
+git tag v0.1.8
+git push origin v0.1.8
 ```
 
 `publish.yml` 校验 tag 与 package.json 一致，执行 Node/Python 测试，从 tag 源码生成以下资产：

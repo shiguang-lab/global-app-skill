@@ -1,0 +1,43 @@
+{
+  "business": {
+    "method": "in_session",
+    "status": "passed",
+    "evidence": "review/business-1.md#L1",
+    "items": {
+      "apply": {
+        "status": "passed",
+        "evidence": "analysis/runtime.md#L12",
+        "assessment": "原包入口与提交结果已在 App 内实测。"
+      },
+      "repay": {
+        "status": "passed",
+        "evidence": "analysis/runtime.md#L20",
+        "assessment": "还款入口与成功/失败分支已实测。"
+      }
+    }
+  },
+  "pages": {
+    "method": "in_session",
+    "status": "passed",
+    "evidence": "review/pages-1.md#L1",
+    "items": {
+      "home": {
+        "status": "passed",
+        "evidence": "analysis/runtime.md#L5",
+        "assessment": "首页原图与可见状态已核对。"
+      }
+    }
+  },
+  "h5": {
+    "method": "in_session",
+    "status": "passed",
+    "evidence": "review/h5-1.md#L1",
+    "items": {
+      "withdraw": {
+        "status": "passed",
+        "evidence": "analysis/h5-scope.md#L4",
+        "assessment": "路由、宿主与可见行为已核对。"
+      }
+    }
+  }
+}

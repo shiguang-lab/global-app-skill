@@ -1,6 +1,6 @@
 # 下载顺序与用户介入
 
-本文件是业务调研/UED 提取共用的前四步。只下载时按下面 `/4` 示例执行并结束；业务/UED 使用 `/10`，第 4 步后分别继续 [业务第 5–10 步](research-workflow.md) 或 [UED 工作流](ued-workflow.md)。所有下载渠道顺序、三轮搜索和去重约束保持一致。
+本文件是业务调研/UED 提取共用的前四步。只下载时按下面 `/4` 示例执行并结束；业务/UED 使用 `/10`，第 4 步后分别继续 [业务第 5–10 步](research-workflow.md) 或 [UED 工作流](ued-workflow.md)。所有下载渠道顺序、三轮搜索和去重约束保持一致。第 1/4 步的通过条件以[主工作流](guide.md#主工作流)的十步表为准，本文件只展开操作与降级。
 
 ## 主流程的状态与依赖
 
@@ -45,7 +45,7 @@
 
 ## 1. 环境检查
 
-先执行 `python3 scripts/preflight.py --report <任务目录>/environment.json`，再进行任何商店、镜像、包名搜索。国家已知时可追加 `--country`；未知无需先打断用户询问，先完成不依赖国家的设备检测。
+先执行 `python3 scripts/preflight.py --report <任务目录>/environment.json`，再进行任何商店、镜像、包名搜索。国家已知时可追加 `--country`；未知无需先打断用户询问，先完成不依赖国家的设备检测。脚本优先用 `CLI run` 执行（见 [CLI 执行](cli.md)）；这里的 `python3` 是参数简写，直接执行时必须先切到 `$RESOURCE_ROOT`。
 
 通过需同时满足：返回码 0、报告 `status=passed`、`downstream_allowed=true`。退出码 4 表示硬门槛失败。真机/在线模拟器要求 ADB 授权且 shell 可响应；未启动 AVD 要求 emulator 程序、配置以及 system/ramdisk/kernel 镜像存在。配置完整不等于已验证启动，使用前仍需启动并核实运行状态。
 
@@ -69,7 +69,16 @@
 - 有完整 Google Play 链接时优先采用其包名；用开发者、官网和目标市场交叉核对。商店 `hl/gl` 是查询参数，不保证应用发行市场或账号地区。
 - 同名或同品牌多国包存在歧义时，先展示候选包及依据，让用户选择；等待期间可查询候选元数据。不能把另一个国家的包当作成功。
 - 指定版本必须满足。未指定时优先取可核实的较新版本；只有商店/API 明确给出查询时间和可用版本时才声称“该渠道当前返回版本”，不要直接声称全渠道最新版。
-- 此模块处理 Android。用户实际要 iOS 时先澄清平台，不能以 Android 样本代替 IPA。
+- 此模块只处理 Android。用户实际要 iOS 时说明本 skill 不适用并停止，不能以 Android 样本代替 IPA。
+
+任务目录确定后先初始化校验账本，纯下载同样执行；`review.json` 可以稍后创建：
+
+```sh
+mkdir -p "$TASK_DIR"
+python3 "$RESOURCE_ROOT/scripts/check_delivery.py" init "$TASK_DIR/review.json"
+```
+
+取包账本是另一个文件，在第 3 步用 `attempts.py init` 单独建立，两者不要混用。
 
 ## 3. 获取安装包：有顺序的子工作流
 
