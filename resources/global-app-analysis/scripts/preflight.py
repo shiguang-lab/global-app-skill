@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Check the required Android device/AVD gate, then inventory VPN and proxy capabilities."""
+"""Check the required Android device/AVD gate, then inventory VPN and proxy capabilities.
+
+The AVD check is read-only apart from one create+unlink probe file inside each AVD
+directory, needed because a session sandbox can deny writes even when mode bits allow them.
+"""
 import argparse
 import json
 import os
@@ -30,6 +34,30 @@ def properties(path):
                 if "=" in line and not line.lstrip().startswith("#"))
 
 
+def probe_writable(directory):
+    """Check whether this process can actually create files in an AVD directory.
+
+    Mode bits can look writable while a session sandbox still denies writes, and an
+    AVD the current session cannot write fails to boot with a misleading snapshot
+    error. Probe with a real create+unlink instead of trusting os.access alone.
+    """
+    if not os.access(directory, os.W_OK | os.X_OK):
+        return {"writable": False, "write_probe_error": "permission_bits"}
+    probe = directory / (".preflight-write-" + str(os.getpid()))
+    try:
+        probe.write_text("")
+        probe.unlink()
+    except OSError as exc:
+        return {"writable": False, "write_probe_error": type(exc).__name__}
+    return {"writable": True}
+
+
+def avd_snapshot_state(directory):
+    artifacts = [n for n in ("bootcompleted.ini", "snapshots") if (directory / n).exists()]
+    locks = [n for n in ("hardware-qemu.ini.lock", "multiinstance.lock") if (directory / n).exists()]
+    return {"artifacts": artifacts, "lock_files": locks}
+
+
 def avd_inventory(names, sdk=None):
     homes = [os.environ.get("ANDROID_AVD_HOME")]
     if os.environ.get("ANDROID_EMULATOR_HOME"):
@@ -49,8 +77,12 @@ def avd_inventory(names, sdk=None):
             cfg = properties(directory / "config.ini")
             if not cfg:
                 continue
-            item.update(config=str(directory / "config.ini"), abi=cfg.get("abi.type"),
-                        google_play=cfg.get("PlayStore.enabled", "false").lower() == "true")
+            writable = probe_writable(directory)
+            item.update(config=str(directory / "config.ini"), directory=str(directory), abi=cfg.get("abi.type"),
+                        google_play=cfg.get("PlayStore.enabled", "false").lower() == "true",
+                        snapshot_state=avd_snapshot_state(directory), directory_writable=writable["writable"])
+            if not writable["writable"]:
+                item["write_probe_error"] = writable["write_probe_error"]
             image = cfg.get("image.sysdir.1")
             image_dirs = ([Path(image).expanduser()] if image and Path(image).is_absolute() else
                           [root / image for root in sdk_roots(sdk)] if image else [])
@@ -103,13 +135,21 @@ def device_check(tools, sdk=None):
             result["avds"] = avd_inventory([s.strip() for s in listing.get("stdout", "").splitlines() if s.strip()], sdk)
     online = [d for d in result["connected_devices"] if d["operational"]]
     configured = [d for d in result["avds"] if d["configured"]]
+    unwritable = [d for d in configured if d.get("directory_writable") is False]
     if not online and not configured:
         gate["errors"].append({"code": "NO_ANDROID_DEVICE", "message": "未发现可响应的已授权 Android 设备，也没有配置和系统镜像完整的 AVD；调研已中断。"})
         if any(d["state"] == "unauthorized" for d in result["connected_devices"]):
             gate["errors"].append({"code": "DEVICE_UNAUTHORIZED", "message": "检测到未授权真机；请在设备上批准 USB 调试后重新运行环境检查。"})
+    elif not online and len(unwritable) == len(configured):
+        blocked = "、".join(d.get("directory") or d["name"] for d in unwritable)
+        gate["errors"].append({"code": "AVD_NOT_WRITABLE", "message":
+            f"AVD 配置完整，但当前会话无法写入 {blocked}；模拟器启动时要更新快照标记，写不进去会以 "
+            "“A snapshot operation ... is pending” 报错退出，因此不能算可启动。请在你自己终端启动该 AVD "
+            "或用 `emulator -avd <name> -no-snapshot-load` 启动后把 serial 告知本次会话，或授予该目录写权限后"
+            "重跑第 1 步。不要为此新建 AVD、执行 -wipe-data 或删除快照。"})
     if not gate["errors"]:
         gate.update(status="passed", online_device_count=len(online), configured_avd_count=len(configured),
-                    requires_emulator_start=not bool(online))
+                    writable_avd_count=len(configured) - len(unwritable), requires_emulator_start=not bool(online))
     return result
 
 
@@ -152,7 +192,7 @@ def main():
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 4
     gate = result["device_gate"]
-    emit("环境检查 · 设备", "succeeded", f"{gate['online_device_count']} 台在线可响应设备，{gate['configured_avd_count']} 个配置完整的 AVD。")
+    emit("环境检查 · 设备", "succeeded", f"{gate['online_device_count']} 台在线可响应设备，{gate['configured_avd_count']} 个配置完整的 AVD，其中 {gate.get('writable_avd_count', 0)} 个当前会话可写、可启动。")
     emit("环境检查 · VPN/代理", "running", "只读盘点现有代理和 VPN 能力，不切换节点。")
     if platform.system() == "Darwin":
         sc = run(["/usr/sbin/scutil", "--proxy"])

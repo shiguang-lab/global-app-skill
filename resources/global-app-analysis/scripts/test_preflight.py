@@ -76,6 +76,30 @@ class DeviceGateTests(unittest.TestCase):
         self.assertEqual(result["device_gate"]["status"], "passed")
         self.assertEqual(result["device_gate"]["online_device_count"], 0)
 
+    def test_unwritable_avd_fails_with_actionable_reason(self):
+        avds = [{"name": "Fixture_AVD", "configured": True, "directory": "/home/u/.android/avd/Fixture_AVD.avd",
+                 "directory_writable": False, "snapshot_state": {"artifacts": ["bootcompleted.ini"], "lock_files": []}}]
+        result = self.check("", avds=avds)
+        self.assertEqual(result["device_gate"]["status"], "failed")
+        self.assertIn("AVD_NOT_WRITABLE", [e["code"] for e in result["device_gate"]["errors"]])
+        message = [e["message"] for e in result["device_gate"]["errors"] if e["code"] == "AVD_NOT_WRITABLE"][0]
+        self.assertIn("Fixture_AVD.avd", message)
+        self.assertIn("不要为此新建 AVD", message)
+
+    def test_unwritable_avd_is_fine_when_an_online_device_exists(self):
+        avds = [{"name": "Fixture_AVD", "configured": True, "directory_writable": False}]
+        result = self.check("phone-fixture device\n", avds=avds)
+        self.assertEqual(result["device_gate"]["status"], "passed")
+        self.assertEqual(result["device_gate"]["writable_avd_count"], 0)
+
+    def test_one_writable_avd_is_enough(self):
+        avds = [{"name": "Blocked", "configured": True, "directory_writable": False},
+                {"name": "Usable", "configured": True, "directory_writable": True}]
+        result = self.check("", avds=avds)
+        self.assertEqual(result["device_gate"]["status"], "passed")
+        self.assertEqual(result["device_gate"]["writable_avd_count"], 1)
+        self.assertTrue(result["device_gate"]["requires_emulator_start"])
+
     def test_missing_adb_does_not_claim_a_usable_environment(self):
         with mock.patch.object(preflight, "run", return_value=passed("fixture")), \
              mock.patch.object(preflight, "avd_inventory", return_value=[{"name": "fixture", "configured": True}]):
@@ -103,6 +127,33 @@ class AvdInventoryTests(unittest.TestCase):
                 self.assertTrue(item["configured"])
                 self.assertTrue(item["google_play"])
                 self.assertFalse(item["boot_verified"])
+                self.assertTrue(item["directory_writable"])
+
+    def test_write_probe_reports_denied_sandbox_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            real_write_text = Path.write_text
+
+            def denied(path, *args, **kwargs):
+                if path.parent == directory:
+                    raise PermissionError(1, "Operation not permitted", str(path))
+                return real_write_text(path, *args, **kwargs)
+
+            with mock.patch.object(Path, "write_text", denied):
+                self.assertEqual(preflight.probe_writable(directory),
+                                 {"writable": False, "write_probe_error": "PermissionError"})
+            self.assertEqual(preflight.probe_writable(directory), {"writable": True})
+            self.assertEqual(list(directory.iterdir()), [])
+
+    def test_snapshot_state_lists_stale_boot_marker(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            directory = Path(tmp)
+            (directory / "bootcompleted.ini").touch()
+            (directory / "snapshots").mkdir()
+            (directory / "multiinstance.lock").touch()
+            state = preflight.avd_snapshot_state(directory)
+            self.assertEqual(state["artifacts"], ["bootcompleted.ini", "snapshots"])
+            self.assertEqual(state["lock_files"], ["multiinstance.lock"])
 
 
 class FailFastTests(unittest.TestCase):

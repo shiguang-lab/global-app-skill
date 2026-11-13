@@ -13,11 +13,29 @@
 
 首次选机或换机时，在正文说明用途、设备类型、serial 和选择依据，证据记录关联实际设备。设备选择不扩大操作授权；个人/共享真机的新安装、升级、覆盖及数据处置仍遵循现有授权规则，已有授权不重复请求。
 
+### 启动已配置的 AVD
+
+设备门槛通过只表示“有完整 AVD 可准备启动”，不等于它一定能启动。启动前先看 `preflight` 给出的 `directory`、`directory_writable` 和 `snapshot_state`：
+
+1. `directory_writable=false` 时不要启动。模拟器启动会更新或删除 `bootcompleted.ini` 等快照标记；当前会话写不进 AVD 目录时，日志会先是 `WARNING | Deleting .../bootcompleted.ini failed`，随后 `FATAL | A snapshot operation for '<名字>' is pending and timeout has expired.`。这是权限问题，不是镜像损坏、也不是 AVD 锁坏了。按 `AVD_NOT_WRITABLE` 报出的路径交用户处理：在其自己的终端启动该 AVD，或授予写权限后重跑第 1 步。
+2. 需要自己启动且确实有写权限时，用已有 AVD、保留原快照，并让输出可回收：
+
+   ```sh
+   emulator -avd <已有AVD名> -no-snapshot-load -no-boot-anim
+   adb -s emulator-5554 shell getprop sys.boot_completed
+   ```
+
+   `sys.boot_completed=1` 后才能在正文说该 AVD 已在线，并把 `boot_verified` 记为 true；`emulator-5554` 只是示例，以实际 serial 为准。命令要作为后台任务运行并保留日志，不要阻塞主流程；启动失败保留原始 `FATAL`/`WARNING` 行作为证据。
+
+3. 用户已在自己终端启动的 AVD 只通过 `adb -s SERIAL` 交互：不要从受限会话 `kill`、重启或替换它，杀进程后本会话起不回来，只能再请用户启动。收尾时保持它在运行并明确说明交还，不主动关闭。
+4. 快照可疑（`snapshot_state.artifacts` 含 `bootcompleted.ini`/`snapshots` 且上次未正常退出）时，加 `-no-snapshot-load` 冷启动一次即可；不要删除快照目录，也不要 `-wipe-data`。
+5. 不要为了绕过权限去新建 AVD：新 AVD 用同一镜像但没有快照，冷启动更慢、更占磁盘，原有设备状态也不在。已有合适 AVD 存在时，换 AVD 只能由用户决定或在 AVD 确实不满足 ABI/SDK/服务要求时按第 3 条规则换。
+
 ## 网络盘点与 VPN
 
-主流程第 1 步先运行 `python3 scripts/preflight.py --country PH --report <任务目录>/environment.json`（国家按已知目标替换，未知可省略）。先检测 SDK、ADB 设备和 AVD 配置/镜像；没有可响应的已授权设备或完整 AVD 则返回 4 并立即中断，VPN/代理等后续检查跳过。通过设备硬门槛后才只读盘点环境代理、macOS 系统代理、VPN 客户端与已知 controller。脚本不会切换网络或启动模拟器。Python 要求 3.9+。
+主流程第 1 步先运行 `python3 scripts/preflight.py --country PH --report <任务目录>/environment.json`（国家按已知目标替换，未知可省略）。先检测 SDK、ADB 设备和 AVD 配置/镜像，并对每个 AVD 目录做一次创建即删除的写探测，判断当前会话是否真能启动它；没有可响应的已授权设备、也没有当前会话可写的完整 AVD 则返回 4 并立即中断，VPN/代理等后续检查跳过。除这个探测文件外不写 AVD 目录，也不切换网络或启动模拟器。通过设备硬门槛后才只读盘点环境代理、macOS 系统代理、VPN 客户端与已知 controller。Python 要求 3.9+。
 
-正文分别报告工具检测、设备门槛、VPN/代理盘点结果。设备/AVD 不存在与权限未就绪应保留明确错误；不能为了继续下载临时忽略这个失败。完整 AVD 的 `boot_verified=false` 意味着尚未实际启动验证，不能说它已在线。
+正文分别报告工具检测、设备门槛、VPN/代理盘点结果。设备/AVD 不存在、目录不可写（`AVD_NOT_WRITABLE`）与权限未就绪应保留明确错误；不能为了继续下载临时忽略这个失败。完整 AVD 的 `boot_verified=false` 意味着尚未实际启动验证，不能说它已在线；`directory_writable=false` 则连启动都不应尝试。
 
 节点发现按以下顺序：
 
