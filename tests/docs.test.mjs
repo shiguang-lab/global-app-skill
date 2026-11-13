@@ -92,3 +92,41 @@ test('the skill no longer depends on review/delivery checker artifacts', async (
     }
   }
 });
+
+test('release gate has one definition and one executable card', async () => {
+  const guide = await readFile(path.join(references, 'guide.md'), 'utf8');
+  const card = (text) => [...text.matchAll(/^\| (G\d) \|/gm)].map((match) => match[1]);
+  const defined = card(rules);
+  const shown = card(guide);
+  assert.deepEqual(shown, defined, 'guide.md 放行卡与 rules.md 判据编号不一致');
+  assert.ok(defined.length >= 4, 'rules.md 至少要有四个放行判据');
+  assert.match(rules, /^## 放行判据$/m);
+  assert.match(guide, /^## 放行卡$/m);
+
+  const lastHeading = [...guide.matchAll(/^## (.+)$/gm)].pop();
+  assert.equal(lastHeading[1].trim(), '放行卡', 'guide.md 末尾必须是放行卡');
+
+  const canonical = '最后一轮修改之后';
+  const files = [
+    path.join(root, 'skills/global-app-analysis/SKILL.md'),
+    ...await markdownFiles(path.join(root, 'resources/global-app-analysis/references')),
+  ];
+  const carriers = [];
+  for (const file of files) {
+    const text = await readFile(file, 'utf8');
+    if (text.includes(canonical)) carriers.push(path.basename(file));
+  }
+  assert.deepEqual(carriers.sort(), ['guide.md', 'rules.md'],
+    '判据文字只能在 rules.md 定义、在 guide.md 的放行卡复述，其他文档只引用');
+
+  const pointer = 'rules.md#放行判据';
+  const pointers = [
+    path.join(root, 'skills/global-app-analysis/SKILL.md'),
+    path.join(references, 'review-workflow.md'),
+    path.join(references, 'report-review-workflow.md'),
+  ];
+  for (const file of pointers) {
+    const text = await readFile(file, 'utf8');
+    assert.ok(text.includes(pointer), `${path.relative(root, file)} 未指向唯一放行判据`);
+  }
+});
