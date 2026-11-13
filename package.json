@@ -1,6 +1,6 @@
 {
   "name": "global-app-skill",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Thin skill bootstrap and GitHub resource runner for overseas Android app research",
   "type": "module",
   "license": "UNLICENSED",
